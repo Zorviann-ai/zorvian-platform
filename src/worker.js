@@ -18,8 +18,5 @@ if(u.pathname==='/api/leads'&&r.method==='POST'){const b=await r.json(),lid=uid(
 if(u.pathname==='/api/ai/enquiry'&&r.method==='POST'){const b=await r.json(),m=String(b.message||'').slice(0,5000);if(!m)return json({error:'message_required'},400);let reply='Please tell me what needs doing, where it starts, where it needs to go, and when it needs to happen.';if(e.AI)try{const x=await e.AI.run('@cf/zai-org/glm-4.7-flash',{messages:[{role:'system',content:'You are Zorvian, a concise business AI assistant. Qualify enquiries. Never invent prices or availability. Ask for missing details and hand off to a human when needed.'},{role:'user',content:m}]});reply=x?.response||reply}catch(_){}return json({reply})}
 if(u.pathname==='/api/ai/command'&&r.method==='POST'){const b=await r.json(),m=String(b.command||'').slice(0,3000);let reply='Action received. I will prepare the requested change and keep production actions behind approval.';if(e.AI)try{const x=await e.AI.run('@cf/zai-org/glm-4.7-flash',{messages:[{role:'system',content:'You are Zorvian business control AI. Interpret commands for website content, leads, campaigns, follow-ups and reporting. Never claim an action was published or sent unless an integration executed it. Return a short action plan and required system.'},{role:'user',content:m}]});reply=x?.response||reply}catch(_){}await audit(e,user,'ai.command',{command:m});return json({reply})}
 return e.ASSETS.fetch(r);
-}catch(err){
-  console.error(err);
-  return json({error:'server_error'},500);
 }
 }};
