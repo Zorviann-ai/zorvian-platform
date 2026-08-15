@@ -7,9 +7,8 @@ directory = "./public"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "zorvian"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
-
+database_name = "zorvian-db"
+database_id = "90a4c2dc-02e0-49bd-8ae1-525483043bca"
 # Production only: Workers AI is intentionally NOT configured at the top level.
 # This prevents local development from contacting Cloudflare Workers AI.
 [env.production]
@@ -21,8 +20,8 @@ directory = "./public"
 
 [[env.production.d1_databases]]
 binding = "DB"
-database_name = "zorvian"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_name = "zorvian-db"
+database_id = "90a4c2dc-02e0-49bd-8ae1-525483043bca"
 
 [env.production.ai]
 binding = "AI"
