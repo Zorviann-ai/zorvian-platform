@@ -1,0 +1,28 @@
+name = "zorvian-platform"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+
+[assets]
+directory = "./public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "zorvian"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Production only: Workers AI is intentionally NOT configured at the top level.
+# This prevents local development from contacting Cloudflare Workers AI.
+[env.production]
+name = "zorvian-platform-production"
+compatibility_date = "2026-08-01"
+
+[env.production.assets]
+directory = "./public"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "zorvian"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[env.production.ai]
+binding = "AI"
