@@ -1,5 +1,5 @@
 const J={"content-type":"application/json;charset=UTF-8"};const uid=()=>crypto.randomUUID();const now=()=>new Date().toISOString();
-const json=(x,s=200,h={})=>new Response(JSON.stringify(x),{status:s,headers:json(DATA,200,{'Set-Cookie':cookie(...)});
+const const json=(x,s=200,h={})=>new Response(JSON.stringify(x),{status:s,headers:{...J,...h}});
 const cookie=(n,v,age=604800)=>`${n}=${v}; Path=/; Max-Age=${age}; HttpOnly; Secure; SameSite=Lax`;
 const getCookie=(r,n)=>{const m=(r.headers.get('Cookie')||'').match(new RegExp(`(?:^|; )${n}=([^;]+)`));return m&&m[1]};
 async function hash(p,s=crypto.randomUUID()){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(p),'PBKDF2',false,['deriveBits']);const b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new TextEncoder().encode(s),iterations:10000,hash:'SHA-256'},k,256);return s+'$'+btoa(String.fromCharCode(...new Uint8Array(b)))}
