@@ -2,7 +2,7 @@ const J={"content-type":"application/json;charset=UTF-8"};const uid=()=>crypto.r
 const json=(x,s=200,h={})=>new Response(JSON.stringify(x),{status:s,headers:{...J,...h}});
 const cookie=(n,v,age=604800)=>`${n}=${v}; Path=/; Max-Age=${age}; HttpOnly; Secure; SameSite=Lax`;
 const getCookie=(r,n)=>{const m=(r.headers.get('Cookie')||'').match(new RegExp(`(?:^|; )${n}=([^;]+)`));return m&&m[1]};
-async function hash(p,s=crypto.randomUUID()){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(p),'PBKDF2',false,['deriveBits']);const b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new TextEncoder().encode(s),iterations:120000,hash:'SHA-256'},k,256);return s+'$'+btoa(String.fromCharCode(...new Uint8Array(b)))}
+async function hash(p,s=crypto.randomUUID()){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(p),'PBKDF2',false,['deriveBits']);const b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new TextEncoder().encode(s),iterations:10000,hash:'SHA-256'},k,256);return s+'$'+btoa(String.fromCharCode(...new Uint8Array(b)))}
 async function verify(p,x){const [s]=x.split('$');return await hash(p,s)===x}
 async function me(r,e){const sid=getCookie(r,'zorvian_session');if(!sid)return null;return await e.DB.prepare(`SELECT s.id,s.expires_at,u.id user_id,u.name,u.email,u.role,u.tenant_id,t.name tenant_name,t.slug tenant_slug,t.website_url FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN tenants t ON t.id=u.tenant_id WHERE s.id=? AND s.expires_at>?`).bind(sid,now()).first()}
 async function audit(e,u,a,d={}){await e.DB.prepare('INSERT INTO audit_logs(id,tenant_id,user_id,action,details_json) VALUES(?,?,?,?,?)').bind(uid(),u?.tenant_id||null,u?.user_id||null,a,JSON.stringify(d)).run()}
