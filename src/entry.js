@@ -53,9 +53,11 @@ function extractReceptionistFacts(message) {
   const name = firstMatch(/(?:my name is|i am|i'm)\s+([A-Z][A-Za-z' -]{1,60}?)(?:\.|,|\s+i\b|\s+from\b|\s+and\b|\s+i run\b)/i, text);
   const phone = firstMatch(/(?:phone(?: number)?|mobile|number|contact me at)\s*(?:is|:)?\s*((?:\+44\s?\d|0\d)[\d\s-]{8,16})/i, text).replace(/[\s-]+/g, "");
   const duration = firstMatch(new RegExp(`\\b(?:for|lasting)\\s+(${DURATION_QUANTITY}\\s*${DURATION_UNIT})\\b`, "i"), text);
-  const start = firstMatch(/\b(?:starting|start(?:ing)?|from)\s+((?:next\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|(?:today|tomorrow)|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)/i, text);
+  const start = firstMatch(/\b(?:starting|start(?:ing)?|from)\s+((?:(?:next|this)\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|(?:today|tomorrow)|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)/i, text);
   const location = firstMatch(/\b(?:in|near)\s+([A-Z][A-Za-z -]{2,40})(?=\.|,|\s+i\b|\s+we\b|\s+and\b|\s+for\b|$)/, text);
-  const company = firstMatch(/(?:i run|i own|i work for)\s+(?:a\s+)?(.+?)(?=\s+in\s+[A-Z]|\.\s+i\b|\.\s+we\b|$)/i, text);
+  const companyFrom = firstMatch(/(?:my name is|i am|i'm)\s+[A-Z][A-Za-z' -]{1,60}?\s+from\s+(.+?)(?=\s+in\s+[A-Z]|\.\s+i\b|\.\s+we\b|\s+and\s+(?:i|we)\b|$)/i, text);
+  const companyDirect = firstMatch(/(?:i run|i own|i work for)\s+(?:a\s+)?(.+?)(?=\s+in\s+[A-Z]|\.\s+i\b|\.\s+we\b|$)/i, text);
+  const company = companyFrom || companyDirect;
   const service = firstMatch(new RegExp(`(?:need to|want to|looking to)\\s+(?:hire|rent|book|buy|arrange|order)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+from\\b|\\s+on\\b|\\.|$)`, "i"), text);
   const availabilityRequested = /\bavailable\b|\bavailability\b|\bin stock\b|\bfree\b/i.test(text);
   const urgent = /\burgent\b|\basap\b|\bimmediately\b|\bemergency\b/i.test(text);
