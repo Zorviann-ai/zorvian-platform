@@ -64,7 +64,7 @@ function extractCalendarFacts(message) {
   const date = firstMatch(/\b((?:(?:next|this)\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|today|tomorrow|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)\b/i, text);
   const time = firstMatch(/\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i, text);
   const email = firstMatch(/\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i, text);
-  const location = firstMatch(/\bat\s+(?:our|the|a|an)\s+(.+?)(?=\s+to\s+(?:discuss|review|meet|talk)\b|\.|,|$)/i, text);
+  const location = firstMatch(/\bat\s+(?:our|the|a|an)\s+(.+?)(?=\s+(?:(?:next|this)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|week|month)|today|tomorrow)\b|\s+to\s+(?:discuss|review|meet|talk)\b|\.|,|$)/i, text);
   const purpose = firstMatch(/\bto\s+(discuss|review|talk about|meet about)\s+(.+?)(?=\.|,\s*[A-Z][A-Za-z' -]+(?:'s)?\s+email\b|$)/i, text);
   const purposeText = purpose ? firstMatch(/\bto\s+((?:discuss|review|talk about|meet about)\s+.+?)(?=\.|,\s*[A-Z][A-Za-z' -]+(?:'s)?\s+email\b|$)/i, text) : "";
   return { text, duration, attendee, date, time, email, location, purpose: purposeText };
