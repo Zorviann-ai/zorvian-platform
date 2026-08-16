@@ -40,6 +40,8 @@ function extractReply(result) {
 }
 
 const INTERNAL_MARKERS = /(?:system prompt|system message|developer message|internal instructions|hidden instructions|chain[- ]of[- ]thought|drafting notes|self[- ]correction|the user wants an output|the output should follow|here(?:'|’)s how each section|content_type\s*=|\[instruction\]|```(?:json|text)?)/i;
+const DURATION_QUANTITY = "(?:\\d+(?:\\.\\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a|an)";
+const DURATION_UNIT = "(?:day|days|week|weeks|hour|hours)";
 
 function firstMatch(pattern, text) {
   const match = text.match(pattern);
@@ -50,11 +52,11 @@ function extractReceptionistFacts(message) {
   const text = String(message || "").replace(/\s+/g, " ").trim();
   const name = firstMatch(/(?:my name is|i am|i'm)\s+([A-Z][A-Za-z' -]{1,60}?)(?:\.|,|\s+i\b|\s+from\b|\s+and\b|\s+i run\b)/i, text);
   const phone = firstMatch(/(?:phone(?: number)?|mobile|number|contact me at)\s*(?:is|:)?\s*((?:\+44\s?\d|0\d)[\d\s-]{8,16})/i, text).replace(/[\s-]+/g, "");
-  const duration = firstMatch(/\b(?:for|lasting)\s+(\d+(?:\.\d+)?\s*(?:day|days|week|weeks|hour|hours))\b/i, text);
+  const duration = firstMatch(new RegExp(`\\b(?:for|lasting)\\s+(${DURATION_QUANTITY}\\s*${DURATION_UNIT})\\b`, "i"), text);
   const start = firstMatch(/\b(?:starting|start(?:ing)?|from)\s+((?:next\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|(?:today|tomorrow)|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)/i, text);
   const location = firstMatch(/\b(?:in|near)\s+([A-Z][A-Za-z -]{2,40})(?=\.|,|\s+i\b|\s+we\b|\s+and\b|\s+for\b|$)/, text);
   const company = firstMatch(/(?:i run|i own|i work for)\s+(?:a\s+)?(.+?)(?=\s+in\s+[A-Z]|\.\s+i\b|\.\s+we\b|$)/i, text);
-  const service = firstMatch(/(?:need to|want to|looking to)\s+(?:hire|rent|book|buy|arrange|order)\s+(.+?)(?=\s+for\s+\d|\s+starting\b|\s+from\b|\s+on\b|\.|$)/i, text);
+  const service = firstMatch(new RegExp(`(?:need to|want to|looking to)\\s+(?:hire|rent|book|buy|arrange|order)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+from\\b|\\s+on\\b|\\.|$)`, "i"), text);
   const availabilityRequested = /\bavailable\b|\bavailability\b|\bin stock\b|\bfree\b/i.test(text);
   const urgent = /\burgent\b|\basap\b|\bimmediately\b|\bemergency\b/i.test(text);
   const email = firstMatch(/\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i, text);
