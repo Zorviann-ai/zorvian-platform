@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Zorvian Video</title>
+<style>
+:root{color-scheme:dark;--bg:#080b12;--panel:#101522;--panel2:#151b2b;--line:#252d40;--text:#f7f8fb;--muted:#98a2b5;--accent:#8b5cf6;--accent2:#6d3ee8;--ok:#4ade80;--bad:#fb7185;--radius:18px}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% 0,#231942 0,transparent 28%),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}.shell{min-height:100vh;display:grid;grid-template-columns:260px 1fr}.side{border-right:1px solid var(--line);padding:28px 22px;background:rgba(8,11,18,.82);backdrop-filter:blur(18px)}.brand{font-weight:800;letter-spacing:-.04em;font-size:24px;margin-bottom:34px}.brand span{color:#a78bfa}.nav a{display:block;color:var(--muted);text-decoration:none;padding:11px 12px;border-radius:10px;margin:4px 0}.nav a.active,.nav a:hover{color:white;background:#161c2a}.main{padding:34px;max-width:1500px;width:100%;margin:0 auto}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:26px}.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:#a78bfa;font-weight:800}.top h1{font-size:34px;letter-spacing:-.04em;margin:6px 0}.top p{color:var(--muted);margin:0;max-width:720px;line-height:1.55}.badge{border:1px solid #4b3b72;background:#1b1430;color:#c4b5fd;padding:8px 10px;border-radius:999px;font-size:12px;font-weight:700}.grid{display:grid;grid-template-columns:minmax(360px,.8fr) minmax(520px,1.4fr);gap:22px}.card{background:rgba(16,21,34,.92);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 24px 80px rgba(0,0,0,.18)}.composer{padding:22px}.label{display:block;font-size:12px;font-weight:800;color:#c7cede;text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px}.field{width:100%;border:1px solid #313a50;background:#0b101b;color:white;border-radius:12px;padding:12px 14px;outline:none}.field:focus{border-color:#7653d8;box-shadow:0 0 0 3px rgba(139,92,246,.12)}textarea.field{min-height:170px;resize:vertical;line-height:1.5}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.button{border:0;border-radius:12px;padding:12px 15px;font-weight:800;cursor:pointer}.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:white}.secondary{background:#1b2232;color:#e8ebf2;border:1px solid #30394e}.button:disabled{opacity:.45;cursor:not-allowed}.hint{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.45}.projects{margin-top:18px;padding:16px}.projects h2,.studio h2{font-size:15px;margin:0 0 12px}.project-item{padding:12px;border-radius:12px;cursor:pointer;border:1px solid transparent}.project-item:hover,.project-item.active{background:#171e2d;border-color:#2c354a}.project-title{font-weight:700;font-size:14px}.project-meta{font-size:12px;color:var(--muted);margin-top:4px}.studio{padding:20px;min-height:650px}.empty{height:570px;display:grid;place-items:center;text-align:center;color:var(--muted)}.empty strong{display:block;color:white;font-size:18px;margin-bottom:6px}.studio-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding-bottom:16px;border-bottom:1px solid var(--line)}.studio-title h2{font-size:20px;margin:0 0 5px}.studio-title p{margin:0;color:var(--muted);font-size:13px}.metrics{display:flex;gap:8px;flex-wrap:wrap;margin:15px 0}.metric{background:#0c111c;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12px;color:var(--muted)}.metric b{color:white}.scenes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.scene{border:1px solid var(--line);background:#0c111c;border-radius:14px;overflow:hidden}.preview{aspect-ratio:16/9;background:#090d15;display:grid;place-items:center;color:#566078;font-size:12px}.preview img{width:100%;height:100%;object-fit:cover;display:block}.scene-body{padding:12px}.scene-top{display:flex;justify-content:space-between;gap:8px}.scene-title{font-size:14px;font-weight:800}.status{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#b6c0d4}.status.completed{color:var(--ok)}.status.failed{color:var(--bad)}.scene-prompt{font-size:12px;color:var(--muted);line-height:1.45;margin-top:8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.notice{padding:10px 12px;background:#131a29;border:1px solid #2c3750;border-radius:10px;color:#b7c0d2;font-size:12px;line-height:1.45;margin-bottom:14px}.error{background:#2a1118;border-color:#5b2530;color:#fecdd3}.loading{opacity:.6;pointer-events:none}@media(max-width:980px){.shell{grid-template-columns:1fr}.side{display:none}.grid{grid-template-columns:1fr}.main{padding:20px}.scenes{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">Zorvian<span>AI</span></div>
+    <nav class="nav">
+      <a href="/">Platform</a>
+      <a class="active" href="/video">AI Video</a>
+      <a href="/progress.html">Progress</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div><div class="eyebrow">Zorvian Studio</div><h1>AI Video</h1><p>Turn a brief into a planned multi-scene production. This foundation build uses a zero-cost simulation provider so we can prove the complete project, routing, job and cost pipeline before paid generation is enabled.</p></div>
+      <div class="badge">Foundation · Simulation Mode</div>
+    </div>
+    <div id="message"></div>
+    <div class="grid">
+      <div>
+        <section class="card composer">
+          <label class="label" for="prompt">What do you want to create?</label>
+          <textarea class="field" id="prompt" placeholder="Create a 20-second launch video for a new productivity app. Clean, cinematic, modern, with a strong opening and clear final call to action."></textarea>
+          <div class="row">
+            <div><label class="label" for="duration">Duration</label><select class="field" id="duration"><option value="10">10 seconds</option><option value="20" selected>20 seconds</option><option value="30">30 seconds</option><option value="60">60 seconds</option></select></div>
+            <div><label class="label" for="ratio">Format</label><select class="field" id="ratio"><option>16:9</option><option>9:16</option><option>1:1</option></select></div>
+          </div>
+          <button id="create" class="button primary" style="width:100%;margin-top:16px">Plan video</button>
+          <div class="hint">Planning uses Zorvian's storyboard layer. Scene generation below is simulated and records £0 actual provider cost.</div>
+        </section>
+        <section class="card projects"><h2>Projects</h2><div id="projectList"><div class="project-meta">Loading projects…</div></div></section>
+      </div>
+      <section class="card studio" id="studio"><div class="empty"><div><strong>No video selected</strong>Create a project or choose one from your recent projects.</div></div></section>
+    </div>
+  </main>
+</div>
+<script>
+const state={projects:[],current:null};
+const $=id=>document.getElementById(id);
+function money(micros){return '£'+(Number(micros||0)/1000000).toFixed(4)}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function msg(text,error=false){$('message').innerHTML=text?`<div class="notice ${error?'error':''}">${esc(text)}</div>`:''}
+async function api(path,options={}){const r=await fetch(path,{credentials:'same-origin',headers:{'content-type':'application/json',...(options.headers||{})},...options});let data={};try{data=await r.json()}catch{}if(r.status===401){location.href='/';throw new Error('Sign in required')}if(!r.ok)throw new Error(data.error==='video_schema_required'?'Video database migration 0002 must be applied before this workspace can run.':data.error||'Request failed');return data}
+function renderList(){const box=$('projectList');if(!state.projects.length){box.innerHTML='<div class="project-meta">No projects yet.</div>';return}box.innerHTML=state.projects.map(p=>`<div class="project-item ${state.current?.id===p.id?'active':''}" data-id="${esc(p.id)}"><div class="project-title">${esc(p.title)}</div><div class="project-meta">${esc(p.status)} · ${Number(p.scene_count||0)} scenes · ${money(p.actual_cost_micros)}</div></div>`).join('');box.querySelectorAll('.project-item').forEach(el=>el.onclick=()=>loadProject(el.dataset.id))}
+function renderStudio(){const p=state.current;if(!p){$('studio').innerHTML='<div class="empty"><div><strong>No video selected</strong>Create a project or choose one from your recent projects.</div></div>';return}const completed=p.scenes.filter(s=>s.status==='completed').length;const isDone=p.status==='simulated';$('studio').innerHTML=`<div class="studio-head"><div class="studio-title"><h2>${esc(p.title)}</h2><p>${esc(p.aspect_ratio)} · ${Number(p.target_duration_seconds||0)}s · ${p.scenes.length} scenes</p></div><button id="generate" class="button ${isDone?'secondary':'primary'}">${isDone?'Re-run incomplete scenes':'Run simulation'}</button></div><div class="metrics"><div class="metric">Status <b>${esc(p.status)}</b></div><div class="metric">Scenes <b>${completed}/${p.scenes.length}</b></div><div class="metric">Estimated <b>${money(p.costs?.estimated_micros)}</b></div><div class="metric">Actual <b>${money(p.costs?.actual_micros)}</b></div></div><div class="notice">Simulation mode proves provider routing, per-scene jobs, persistent outputs, retries/status plumbing and cost accounting without spending paid generation credits.</div><div class="scenes">${p.scenes.map(s=>`<article class="scene"><div class="preview">${s.output_url?`<img src="${esc(s.output_url)}" alt="${esc(s.title)} preview">`:'Awaiting generation'}</div><div class="scene-body"><div class="scene-top"><div class="scene-title">${Number(s.scene_index)+1}. ${esc(s.title)}</div><div class="status ${esc(s.status)}">${esc(s.status)}</div></div><div class="scene-prompt">${esc(s.visual_prompt)}</div></div></article>`).join('')}</div>`;$('generate').onclick=generateCurrent}
+async function refreshProjects(){try{const d=await api('/api/video/projects');state.projects=d.projects;renderList()}catch(e){msg(e.message,true);$('projectList').innerHTML='<div class="project-meta">Unavailable</div>'}}
+async function loadProject(id){try{msg('');const d=await api('/api/video/projects/'+encodeURIComponent(id));state.current=d.project;renderList();renderStudio()}catch(e){msg(e.message,true)}}
+$('create').onclick=async()=>{const prompt=$('prompt').value.trim();if(!prompt){msg('Enter a video brief first.',true);return}const btn=$('create');btn.disabled=true;btn.textContent='Planning…';try{msg('');const d=await api('/api/video/projects',{method:'POST',body:JSON.stringify({prompt,target_duration_seconds:Number($('duration').value),aspect_ratio:$('ratio').value})});state.current=d.project;$('prompt').value='';await refreshProjects();renderStudio();if(d.planner_degraded)msg('Storyboard created with the deterministic fallback planner because AI planning was unavailable.')}catch(e){msg(e.message,true)}finally{btn.disabled=false;btn.textContent='Plan video'}}
+async function generateCurrent(){if(!state.current)return;const btn=$('generate');btn.disabled=true;btn.textContent='Running…';try{msg('');const d=await api('/api/video/projects/'+encodeURIComponent(state.current.id)+'/generate',{method:'POST',body:'{}'});state.current=d.project;await refreshProjects();renderStudio();msg('Simulation completed. Every generated scene was persisted through the provider-neutral job pipeline at £0 actual provider cost.')}catch(e){msg(e.message,true);btn.disabled=false;btn.textContent='Run simulation'}}
+refreshProjects();
+</script>
+</body>
+</html>

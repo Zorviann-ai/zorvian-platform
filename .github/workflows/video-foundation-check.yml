@@ -1,0 +1,72 @@
+name: Zorvian Video foundation check
+
+on:
+  push:
+    branches:
+      - feature/zorvian-video-foundation
+  pull_request:
+    paths:
+      - 'src/video/**'
+      - 'src/video-entry.js'
+      - 'public/video.html'
+      - 'scripts/video-phase1-smoke.sh'
+      - '0002_video_foundation.sql'
+      - 'wrangler.toml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check JavaScript syntax
+        run: |
+          node --check src/video/core.js
+          node --check src/video/api.js
+          node --check src/video/providers/mock.js
+          node --check src/video-entry.js
+      - name: Validate Worker bundle
+        run: npx wrangler deploy --dry-run
+      - name: Validate video migration SQL
+        run: |
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y sqlite3 >/dev/null
+          sqlite3 /tmp/zorvian.db < 0001_initial.sql
+          sqlite3 /tmp/zorvian.db < 0002_video_foundation.sql
+          sqlite3 /tmp/zorvian.db '.schema video_projects'
+      - name: Apply local D1 migrations
+        run: |
+          rm -rf .wrangler/state
+          npx wrangler d1 execute zorvian-db --local --file=./0001_initial.sql
+          npx wrangler d1 execute zorvian-db --local --file=./0002_video_foundation.sql
+      - name: Phase 1 authenticated end-to-end smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler dev --local --port 8787 > /tmp/zorvian-wrangler.log 2>&1 &
+          WRANGLER_PID=$!
+          cleanup() {
+            kill "$WRANGLER_PID" 2>/dev/null || true
+            wait "$WRANGLER_PID" 2>/dev/null || true
+            cat /tmp/zorvian-wrangler.log || true
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8787/api/health >/dev/null 2>&1; then
+              break
+            fi
+            if ! kill -0 "$WRANGLER_PID" 2>/dev/null; then
+              echo "Wrangler exited before becoming ready"
+              exit 1
+            fi
+            if [ "$attempt" = "40" ]; then
+              echo "Timed out waiting for local Worker"
+              exit 1
+            fi
+            sleep 1
+          done
+          bash scripts/video-phase1-smoke.sh
