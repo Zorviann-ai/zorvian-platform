@@ -28,14 +28,14 @@ const DURATION_UNIT="(?:day|days|week|weeks|hour|hours)";
 
 function extractReceptionistFacts(message){
   const text=String(message||"").replace(/\s+/g," ").trim();
-  const name=firstMatch(/(?:my name is|i am|i'm)\s+([A-Z][A-Za-z' -]{1,60}?)(?:\.|,|\s+i\b|\s+from\b|\s+and\b|\s+i run\b)/i,text);
+  const name=firstMatch(/(?:my name is|i am|i['’]m)\s+([A-Z][A-Za-z' -]{1,60}?)(?:\.|,|\s+i\b|\s+from\b|\s+and\b|\s+i run\b)/i,text);
   const phone=firstMatch(/(?:phone(?: number)?|mobile|number|contact me at)\s*(?:is|:)?\s*((?:\+44\s?\d|0\d)[\d\s-]{8,16})/i,text).replace(/[\s-]+/g,"");
   const duration=firstMatch(new RegExp(`\\b(?:for|lasting)\\s+(${DURATION_QUANTITY}\\s*${DURATION_UNIT})\\b`,"i"),text);
   const exactStart=firstMatch(/\b(?:starting|start(?:ing)?|from)\s+((?:(?:next|this)\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|today|tomorrow|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)/i,text);
   const broadTiming=firstMatch(/\b((?:next|this)\s+(?:week|month))\b/i,text);const start=exactStart||broadTiming;
   const rawLocation=firstMatch(/\b(?:in|near)\s+([A-Z][A-Za-z -]{2,40})(?=\.|,|\s+i\b|\s+we\b|\s+and\b|\s+for\b|$)/,text);
   const location=rawLocation.replace(/\s+(?:next|this)\s+(?:week|month)$/i,"").trim();
-  const companyFrom=firstMatch(/(?:my name is|i am|i'm)\s+[A-Z][A-Za-z' -]{1,60}?\s+from\s+(.+?)(?=\s+in\s+[A-Z]|\.\s+i\b|\.\s+we\b|\s+and\s+(?:i|we)\b|$)/i,text);
+  const companyFrom=firstMatch(/(?:my name is|i am|i['’]m)\s+[A-Z][A-Za-z' -]{1,60}?\s+from\s+(.+?)(?=\s+in\s+[A-Z]|\.\s+i\b|\.\s+we\b|\s+and\s+(?:i|we)\b|$)/i,text);
   const companyDirect=firstMatch(/(?:i run|i own|i work for)\s+(?:a\s+)?(.+?)(?=\s+in\s+[A-Z]|\.\s+i\b|\.\s+we\b|$)/i,text);const company=companyFrom||companyDirect;
   let service=firstMatch(new RegExp(`(?:need to|want to|looking to)\\s+(?:hire|rent|book|buy|arrange|order)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+from\\b|\\s+on\\b|\\.|$)`,"i"),text);service=service.replace(/\s+for\s+(?:a|an|the)?\s*job\b.*$/i,"").trim();
   const email=firstMatch(/\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i,text);
@@ -48,7 +48,7 @@ function calendarResponse(message){const f=extractCalendarFacts(message),missing
 
 function extractBookingFacts(message){
   const text=String(message||"").replace(/\s+/g," ").trim();
-  const customer=firstMatch(/\bfor\s+([A-Z][A-Za-z' -]{1,60}?)(?=\s+from\b|\.|,|$)/,text)||firstMatch(/(?:my name is|i am|i'm)\s+([A-Z][A-Za-z' -]{1,60}?)(?=\s+from\b|\.|,|$)/i,text)||firstMatch(/\b(?:customer|client)\s*(?:is|:)?\s*([A-Z][A-Za-z' -]{1,60}?)(?=\.|,|$)/i,text);
+  const customer=firstMatch(/\bfor\s+([A-Z][A-Za-z' -]{1,60}?)(?=\s+from\b|\.|,|$)/,text)||firstMatch(/(?:my name is|i am|i['’]m)\s+([A-Z][A-Za-z' -]{1,60}?)(?=\s+from\b|\.|,|$)/i,text)||firstMatch(/\b(?:customer|client)\s*(?:is|:)?\s*([A-Z][A-Za-z' -]{1,60}?)(?=\.|,|$)/i,text);
   const company=firstMatch(/\bfrom\s+(.+?)(?=\.|,\s*(?:she|he|they|i)\b|$)/i,text);
   const service=firstMatch(new RegExp(`(?:wants? to|needs? to|looking to|i need to)\\s+(?:hire|rent|book|buy|arrange|order)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+from\\b|\\s+in\\s+[A-Z]|\\.|$)`,"i"),text)||firstMatch(new RegExp(`(?:prepare|create|make)\\s+(?:a\\s+)?booking.*?(?:for|to hire|to rent)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+in\\s+[A-Z]|\\.|$)`,"i"),text);
   const duration=firstMatch(new RegExp(`\\bfor\\s+(${DURATION_QUANTITY}\\s*${DURATION_UNIT})\\b`,"i"),text);
