@@ -89,7 +89,25 @@ async function audit(env, user, action, details = {}) {
 }
 
 const TOOL_PROMPTS = {
-  receptionist: "You are Zorvian AI Receptionist. Qualify the customer's enquiry. Identify the customer's need, urgency, useful contact details, missing information, and the recommended next action. Never invent pricing, availability, bookings, or company policies. If a human needs to act, say exactly what they should do.",
+  receptionist: `You are Zorvian AI Receptionist. Read the entire customer enquiry carefully and respond to the actual information provided.
+
+Return these sections in this order:
+1. Customer need
+2. Details already provided
+3. Urgency and timing
+4. Contact details provided
+5. Missing information
+6. Recommended next action
+7. Human handoff
+
+Rules:
+- Never ask for information that is already present in the enquiry.
+- Quote or clearly restate the important facts supplied by the customer, including their name, company, location, requested service, duration, timing and contact details when provided.
+- If a detail is missing, name only that missing detail.
+- Do not invent pricing, availability, bookings, company policies or stock.
+- If the customer asks whether something is available, say that availability needs to be checked by the business unless a real availability system is connected.
+- Make the response specific to this enquiry. Do not use a generic response when the enquiry contains usable facts.
+- If a human needs to act, state exactly what they should do next.`,
   calendar: "You are Zorvian AI Calendar Assistant. Turn the request into a practical appointment or scheduling plan. Identify date, time, duration, attendees, location, conflicts or missing information. Do not claim that an appointment was actually booked.",
   booking: "You are Zorvian AI Booking Assistant. Prepare the information needed to make a booking, identify missing requirements, and produce a clear confirmation checklist. Never claim availability or a completed booking without a real booking integration.",
   leads: "You are Zorvian AI Lead Intelligence Assistant. Assess buying intent, urgency, opportunity quality, missing information and the best next sales action. Never invent facts.",
@@ -105,27 +123,39 @@ const TOOL_PROMPTS = {
 
 function fallbackReply(tool, message) {
   const names = {
-    receptionist: "I can qualify that enquiry, but I need the customer's requirements and any missing contact or timing details before a team member can act on it.",
-    calendar: "I can prepare the scheduling plan. Please provide the preferred date, time, duration and attendees if they are not already included.",
-    booking: "I can prepare the booking requirements. I will not claim availability or a completed booking until a booking system is connected.",
-    leads: "I can assess the lead once the customer requirements, urgency and contact details are available.",
-    social: "I can turn that objective into a practical social content plan with audience, messages and calls to action.",
-    marketing: "I can turn that into a campaign plan covering audience, offer, messaging, channels and measures.",
-    support: "I can prepare a customer response and escalation plan once the issue and required customer details are clear.",
-    quotes: "I can structure the quote requirements, but pricing and availability must come from your actual business systems.",
-    tasks: "I can turn the request into a prioritised task list with owners, dependencies and deadlines.",
-    intelligence: "I can analyse the supplied business information and separate confirmed facts from assumptions.",
-    command: "Action understood. I can prepare the plan, but I will not claim that an external system changed until an integration executes it.",
-    ask: "I can help plan that business task. Tell me the objective, deadline and any constraints you need me to consider.",
+    receptionist: "The AI service did not return a usable analysis. Please try the enquiry again after the service is checked.",
+    calendar: "The AI service did not return a usable scheduling analysis. Please try again after the service is checked.",
+    booking: "The AI service did not return a usable booking analysis. Please try again after the service is checked.",
+    leads: "The AI service did not return a usable lead analysis. Please try again after the service is checked.",
+    social: "The AI service did not return a usable social response. Please try again after the service is checked.",
+    marketing: "The AI service did not return a usable marketing response. Please try again after the service is checked.",
+    support: "The AI service did not return a usable support response. Please try again after the service is checked.",
+    quotes: "The AI service did not return a usable quote response. Please try again after the service is checked.",
+    tasks: "The AI service did not return a usable task response. Please try again after the service is checked.",
+    intelligence: "The AI service did not return a usable analysis. Please try again after the service is checked.",
+    command: "The AI service did not return a usable command response. Please try again after the service is checked.",
+    ask: "The AI service did not return a usable response. Please try again after the service is checked.",
   };
-  return names[tool] || `I received your request: ${message.slice(0, 160)}`;
+  return names[tool] || `The AI service did not return a usable response for this request.`;
+}
+
+function extractReply(result) {
+  return (
+    result?.response ||
+    result?.result?.response ||
+    result?.output_text ||
+    result?.result?.output_text ||
+    result?.text ||
+    result?.result?.text ||
+    ""
+  );
 }
 
 async function runAI(env, tool, message, context = {}) {
   const system = TOOL_PROMPTS[tool] || TOOL_PROMPTS.ask;
 
   if (!env.AI || typeof env.AI.run !== "function") {
-    return fallbackReply(tool, message);
+    throw new Error("Workers AI binding is unavailable");
   }
 
   const result = await env.AI.run(AI_MODEL, {
@@ -139,10 +169,12 @@ async function runAI(env, tool, message, context = {}) {
       },
     ],
     max_tokens: 900,
-    temperature: 0.25,
+    temperature: 0.2,
   });
 
-  return result?.response || fallbackReply(tool, message);
+  const reply = extractReply(result);
+  if (!reply) throw new Error("Workers AI returned no response text");
+  return reply;
 }
 
 async function handleAI(request, env, tool, user) {
@@ -159,7 +191,11 @@ async function handleAI(request, env, tool, user) {
     return json({ ok: true, tool, reply });
   } catch (error) {
     console.error("AI request failed", tool, error);
-    return json({ error: "ai_unavailable", message: "The AI service could not complete this request. Please try again." }, 503);
+    return json({
+      ok: false,
+      error: "ai_unavailable",
+      message: "The AI service could not complete this request. Please try again."
+    }, 503);
   }
 }
 
