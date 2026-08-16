@@ -99,7 +99,7 @@ json_assert "$list_b" '.ok == true and (.projects | length) == 0'
 
 echo "Checking /video workspace is served"
 tmp="$(mktemp)"
-code="$(status_request "$tmp" "$BASE_URL/video")"
+code="$(status_request "$tmp" -L "$BASE_URL/video")"
 test "$code" = "200"
 grep -q '<title>Zorvian Video</title>' "$tmp"
 rm -f "$tmp"
