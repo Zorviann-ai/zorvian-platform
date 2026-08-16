@@ -8,8 +8,8 @@ trap 'rm -f "$COOKIE_A" "$COOKIE_B"' EXIT
 
 json_assert() {
   local json="$1"
-  local filter="$2"
-  echo "$json" | jq -e "$filter" >/dev/null
+  shift
+  echo "$json" | jq -e "$@" >/dev/null
 }
 
 status_request() {
