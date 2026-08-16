@@ -97,9 +97,9 @@ rm -f "$tmp"
 list_b="$(curl -sS -b "$COOKIE_B" "$BASE_URL/api/video/projects")"
 json_assert "$list_b" '.ok == true and (.projects | length) == 0'
 
-echo "Checking /video workspace is served"
+echo "Checking authenticated /video workspace is served"
 tmp="$(mktemp)"
-code="$(status_request "$tmp" -L "$BASE_URL/video")"
+code="$(status_request "$tmp" -b "$COOKIE_A" -L "$BASE_URL/video")"
 test "$code" = "200"
 grep -q '<title>Zorvian Video</title>' "$tmp"
 rm -f "$tmp"
