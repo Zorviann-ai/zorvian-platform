@@ -8,12 +8,13 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   generated-tests:
     name: Generated security tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,6 +22,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Validate Guardian scripts
+        run: |
+          node --check scripts/guardian-generate.mjs
+          node --check scripts/guardian-secrets.mjs
+      - name: Scan repository for secrets
+        run: npm run guardian:secrets
       - name: Generate repository-aware security tests
         run: npm run guardian:generate
       - name: Run generated security tests
@@ -31,14 +38,27 @@ jobs:
   codeql:
     name: CodeQL security review
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: read
     steps:
       - uses: actions/checkout@v4
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           queries: security-extended
-      - name: Build
-        uses: github/codeql-action/autobuild@v3
+          build-mode: none
       - name: Analyze
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
+        with:
+          output: ../results
+          upload: never
+      - name: Retain CodeQL SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardian-codeql-sarif
+          path: ../results/*.sarif
+          if-no-files-found: error
+          retention-days: 14
