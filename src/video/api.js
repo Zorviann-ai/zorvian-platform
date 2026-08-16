@@ -82,13 +82,10 @@ function dbError(error) {
 async function listProjects(env, user) {
   const result = await env.DB.prepare(
     `SELECT p.id,p.title,p.prompt,p.status,p.aspect_ratio,p.target_duration_seconds,p.created_at,p.updated_at,
-      COUNT(DISTINCT s.id) AS scene_count,
-      COALESCE(SUM(DISTINCT j.actual_cost_micros),0) AS actual_cost_micros
+      (SELECT COUNT(*) FROM video_scenes s WHERE s.project_id=p.id) AS scene_count,
+      (SELECT COALESCE(SUM(j.actual_cost_micros),0) FROM video_jobs j WHERE j.project_id=p.id) AS actual_cost_micros
      FROM video_projects p
-     LEFT JOIN video_scenes s ON s.project_id=p.id
-     LEFT JOIN video_jobs j ON j.project_id=p.id
      WHERE p.tenant_id=?
-     GROUP BY p.id
      ORDER BY datetime(p.created_at) DESC LIMIT 50`
   ).bind(user.tenant_id).all();
   return json({ ok: true, projects: result.results || [] });
