@@ -48,7 +48,6 @@ function extractReply(result) {
   return String(result?.response || result?.result?.response || result?.output_text || result?.result?.output_text || result?.text || result?.result?.text || choice?.message?.content || choice?.text || "").trim();
 }
 
-const INTERNAL_MARKERS = /(?:system prompt|system message|developer message|internal instructions|hidden instructions|chain[- ]of[- ]thought|drafting notes|self[- ]correction|i need to|let me reconsider|wait[,!:]?\s*$)/i;
 const RECEPTION_SECTIONS = [
   "Customer need",
   "Details already provided",
@@ -59,46 +58,97 @@ const RECEPTION_SECTIONS = [
   "Human handoff"
 ];
 
+const INTERNAL_MARKERS = /(?:system prompt|system message|developer message|internal instructions|hidden instructions|chain[- ]of[- ]thought|drafting notes|self[- ]correction|the user wants an output|the output should follow|here(?:'|’)s how each section|content_type\s*=|\[instruction\]|\[\s*\]|```(?:json|text)?)/i;
+
+function firstMatch(pattern, text) {
+  const match = text.match(pattern);
+  return match ? match[1].trim() : "";
+}
+
+function receptionistFallback(message) {
+  const text = String(message || "").replace(/\s+/g, " ").trim();
+  const name = firstMatch(/(?:my name is|i am|i'm)\s+([A-Z][A-Za-z' -]{1,60}?)(?:\.|,|\s+i |\s+from |\s+and |\s+i run)/i, text);
+  const phone = firstMatch(/(?:phone|mobile|number|contact me at)\s*(?:is|:)?\s*(0\d[\d\s]{8,14})/i, text).replace(/\s+/g, " ");
+  const duration = firstMatch(/(?:for|lasting)\s+(\d+(?:\.\d+)?\s*(?:day|days|week|weeks|hour|hours))/i, text);
+  const timing = firstMatch(/(?:starting|from|on)\s+([^,.]+(?:next\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|week|month)[^,.]*)/i, text);
+  const location = firstMatch(/(?:in|near)\s+([A-Z][A-Za-z -]{2,40})(?:\.|,|\s+i need|\s+and|\s+for)/i, text);
+  const company = firstMatch(/(?:i run|i own|i work for)\s+(?:a\s+)?(.+?)(?:\s+in\s+|\.\s+i need|\.\s+we need|\.\s+i'm|\.\s+we're)/i, text);
+  const service = firstMatch(/(?:need to|want to|looking to)\s+(?:hire|rent|book|buy|arrange|order)\s+(.+?)(?:\s+for\s+\d|\s+starting|\s+on\s+|\.|$)/i, text) || "the requested service or product";
+  const missing = [];
+  if (!timing) missing.push("confirmed start date/time");
+  if (!location) missing.push("exact job or delivery location");
+  if (!/@/.test(text) && !/email address/i.test(text)) missing.push("email address, if written confirmation is required");
+  const availabilityRequested = /available|availability|in stock|free/i.test(text);
+  return [
+    "Customer need",
+    service,
+    "",
+    "Details already provided",
+    name ? `Customer: ${name}` : "Customer name: not clearly provided.",
+    company ? `Business: ${company}` : "Business name: not clearly provided.",
+    location ? `Location: ${location}` : "Location: not clearly provided.",
+    duration ? `Duration: ${duration}` : "Duration: not clearly provided.",
+    timing ? `Timing: ${timing}` : "Timing: not clearly provided.",
+    "",
+    "Urgency and timing",
+    timing ? `Requested timing: ${timing}` : "Timing needs confirmation.",
+    /urgent|asap|immediately|today|emergency/i.test(text) ? "Urgency: high based on the customer's wording." : "Urgency: not stated; do not assume.",
+    "",
+    "Contact details provided",
+    phone ? `Phone: ${phone}` : "Phone number: not clearly identified.",
+    "",
+    "Missing information",
+    missing.length ? missing.map(item => `- ${item}`).join("\n") : "No obvious essential detail is missing from the supplied enquiry.",
+    "",
+    "Recommended next action",
+    availabilityRequested ? "Check real availability for the requested period, then contact the customer with the result." : "Confirm any missing booking details and proceed with the appropriate business workflow.",
+    "",
+    "Human handoff",
+    "A team member should take over for availability confirmation and any commercial or booking commitment."
+  ].join("\n");
+}
+
+function hasAllReceptionSections(text) {
+  const normalized = String(text || "").toLowerCase();
+  return RECEPTION_SECTIONS.every(section => normalized.includes(section.toLowerCase()));
+}
+
 function cleanReceptionist(text) {
   let value = String(text || "")
     .replace(/\\n/g, "\n")
     .replace(/\\r/g, "")
     .replace(/\\{2,}/g, "")
-    .replace(/^\s*Thanks[.!]?\s*/i, "")
+    .replace(/^\s*(?:thanks[.!]?|response:?|section:?|content:?)\s*/i, "")
     .trim();
 
-  const starts = RECEPTION_SECTIONS.map(section => {
-    const re = new RegExp(`(?:^|\\n)\\s*(?:\\d+[.)]\\s*)?${section.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}:?\\s*`, "i");
-    const match = re.exec(value);
-    return match ? { section, index: match.index, end: match.index + match[0].length } : null;
-  }).filter(Boolean);
+  if (INTERNAL_MARKERS.test(value)) return "";
 
-  if (starts.length >= 1) {
-    const first = starts.sort((a, b) => a.index - b.index)[0];
-    value = value.slice(first.index).trim();
-  }
+  const positions = RECEPTION_SECTIONS.map(section => {
+    const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = new RegExp(`(?:^|\\n)\\s*(?:#{1,6}\\s*)?(?:\\d+[.)]\\s*)?${escaped}:?\\s*`, "i").exec(value);
+    return match ? match.index : -1;
+  }).filter(index => index >= 0);
 
-  const seventh = new RegExp(`(?:^|\\n)\\s*(?:7[.)]\\s*)?Human handoff:?\\s*`, "i").exec(value);
-  if (seventh) {
-    const after = value.slice(seventh.index + seventh[0].length);
-    const leak = after.search(/\n\s*(?:system|developer|internal|prompt|instructions|drafting|wait|i need to|let me)\b/i);
-    value = value.slice(0, seventh.index + seventh[0].length + (leak >= 0 ? leak : after.length)).trim();
-  }
+  if (positions.length !== 7) return "";
+  const first = Math.min(...positions);
+  value = value.slice(first).trim();
 
   const lines = value.split("\n");
-  const safeLines = [];
+  const safe = [];
   for (const line of lines) {
     if (INTERNAL_MARKERS.test(line)) break;
     if (/^\s*(?:system|developer|assistant|user)\s*(?:prompt|message|instructions?)\s*:/i.test(line)) break;
-    safeLines.push(line);
+    safe.push(line.replace(/^\s*#{1,6}\s*/, ""));
   }
-  value = safeLines.join("\n").trim();
-
-  return value;
+  value = safe.join("\n").trim();
+  return hasAllReceptionSections(value) ? value : "";
 }
 
-function cleanReply(reply, tool) {
-  if (tool === "receptionist") return cleanReceptionist(reply);
+function cleanReply(reply, tool, message) {
+  if (tool === "receptionist") {
+    const cleaned = cleanReceptionist(reply);
+    return cleaned || receptionistFallback(message);
+  }
   return String(reply || "").replace(/\\n/g, "\n").replace(/\\r/g, "").replace(/\\{2,}/g, "").trim();
 }
 
@@ -118,8 +168,8 @@ async function runAI(env, tool, message) {
 
   try {
     const result = await env.AI.run(AI_MODEL, generation);
-    const reply = cleanReply(extractReply(result), tool);
-    if (reply && (!INTERNAL_MARKERS.test(reply) || tool !== "receptionist")) return { ok: true, reply, degraded: false };
+    const reply = cleanReply(extractReply(result), tool, message);
+    if (reply) return { ok: true, reply, degraded: false };
   } catch (error) {
     console.error("Workers AI chat inference failed", error);
   }
@@ -133,12 +183,13 @@ async function runAI(env, tool, message) {
       repetition_penalty: 1.12,
       frequency_penalty: 0.35
     });
-    const reply = cleanReply(extractReply(result), tool);
-    if (reply && (!INTERNAL_MARKERS.test(reply) || tool !== "receptionist")) return { ok: true, reply, degraded: false };
+    const reply = cleanReply(extractReply(result), tool, message);
+    if (reply) return { ok: true, reply, degraded: false };
   } catch (error) {
     console.error("Workers AI prompt inference failed", error);
   }
 
+  if (tool === "receptionist") return { ok: true, reply: receptionistFallback(message), degraded: true };
   return { ok: false, error: "The AI model did not return a safe usable response." };
 }
 
@@ -164,7 +215,7 @@ export default {
       if (!message) return json({ error: "message_required" }, 400);
       const result = await runAI(env, tool, message);
       if (!result.ok) return json({ ok: false, tool, error: result.error }, 503);
-      return json({ ok: true, tool, model: AI_MODEL, reply: result.reply, degraded: false });
+      return json({ ok: true, tool, model: AI_MODEL, reply: result.reply, degraded: Boolean(result.degraded) });
     }
 
     return legacyWorker.fetch(request, env, ctx);
