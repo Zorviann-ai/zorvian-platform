@@ -12,6 +12,9 @@ binding = "DB"
 database_name = "zorvian-db"
 database_id = "90a4c2dc-02e0-49bd-8ae1-525483043bca"
 
+[ai]
+binding = "AI"
+
 [env.production]
 name = "zorvian-platform-production"
 compatibility_date = "2026-08-01"
