@@ -1,20 +1,459 @@
-const J={"content-type":"application/json;charset=UTF-8"};const uid=()=>crypto.randomUUID();const now=()=>new Date().toISOString();
-const json=(x,s=200,h={})=>new Response(JSON.stringify(x),{status:s,headers:{...J,...h}});
-const cookie=(n,v,age=604800)=>`${n}=${v}; Path=/; Max-Age=${age}; HttpOnly; Secure; SameSite=Lax`;
-const getCookie=(r,n)=>{const m=(r.headers.get('Cookie')||'').match(new RegExp(`(?:^|; )${n}=([^;]+)`));return m&&m[1]};
-async function hash(p,s=crypto.randomUUID()){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(p),'PBKDF2',false,['deriveBits']);const b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new TextEncoder().encode(s),iterations:100000,hash:'SHA-256'},k,256);return s+'$'+btoa(String.fromCharCode(...new Uint8Array(b)))}
-async function verify(p,x){const [s]=x.split('$');return await hash(p,s)===x}
-async function me(r,e){const sid=getCookie(r,'zorvian_session');if(!sid)return null;return await e.DB.prepare(`SELECT s.id,s.expires_at,u.id user_id,u.name,u.email,u.role,u.tenant_id,t.name tenant_name,t.slug tenant_slug,t.website_url FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN tenants t ON t.id=u.tenant_id WHERE s.id=? AND s.expires_at>?`).bind(sid,now()).first()}
-async function audit(e,u,a,d={}){await e.DB.prepare('INSERT INTO audit_logs(id,tenant_id,user_id,action,details_json) VALUES(?,?,?,?,?)').bind(uid(),u?.tenant_id||null,u?.user_id||null,a,JSON.stringify(d)).run()}
-export default {async fetch(r,e){const u=new URL(r.url);try{
-if(u.pathname==='/api/health')return json({ok:true,service:'zorvian-platform',time:now()});
-if(u.pathname==='/api/auth/register'&&r.method==='POST'){const b=await r.json(),name=String(b.name||'').trim(),email=String(b.email||'').trim().toLowerCase(),pass=String(b.password||'');if(!name||!email||pass.length<10)return json({error:'Name, email and a password of at least 10 characters are required.'},400);if(await e.DB.prepare('SELECT id FROM users WHERE email=?').bind(email).first())return json({error:'Account already exists.'},409);const tid=uid(),zid=uid(),base=(b.business||name).toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,45)||tid.slice(0,8);let slug=base;if(await e.DB.prepare('SELECT id FROM tenants WHERE slug=?').bind(slug).first())slug=base+'-'+tid.slice(0,6);await e.DB.batch([e.DB.prepare('INSERT INTO tenants(id,name,slug,website_url) VALUES(?,?,?,?)').bind(tid,b.business||name,slug,b.website_url||null),e.DB.prepare('INSERT INTO users(id,tenant_id,name,email,password_hash,role) VALUES(?,?,?,?,?,?)').bind(zid,tid,name,email,await hash(pass),'client')]);const sid=uid();await e.DB.prepare('INSERT INTO sessions(id,user_id,expires_at) VALUES(?,?,?)').bind(sid,zid,new Date(Date.now()+604800000).toISOString()).run();return json({ok:true},{headers:{...J,'Set-Cookie':cookie('zorvian_session',sid)}})}
-if(u.pathname==='/api/auth/login'&&r.method==='POST'){const b=await r.json(),email=String(b.email||'').trim().toLowerCase(),pass=String(b.password||''),x=await e.DB.prepare('SELECT * FROM users WHERE email=?').bind(email).first();if(!x||!(await verify(pass,x.password_hash)))return json({error:'Invalid email or password.'},401);const sid=uid();await e.DB.prepare('INSERT INTO sessions(id,user_id,expires_at) VALUES(?,?,?)').bind(sid,x.id,new Date(Date.now()+604800000).toISOString()).run();return json({ok:true,user:{name:x.name,email:x.email,role:x.role}},{headers:{...J,'Set-Cookie':cookie('zorvian_session',sid)}})}
-if(u.pathname==='/api/auth/logout'&&r.method==='POST'){const sid=getCookie(r,'zorvian_session');if(sid)await e.DB.prepare('DELETE FROM sessions WHERE id=?').bind(sid).run();return json({ok:true},{headers:{...J,'Set-Cookie':cookie('zorvian_session','',0)}})}
-const user=await me(r,e);if(u.pathname==='/api/me')return user?json({authenticated:true,user:{id:user.user_id,name:user.name,email:user.email,role:user.role},tenant:{id:user.tenant_id,name:user.tenant_name,slug:user.tenant_slug,website_url:user.website_url}}):json({authenticated:false});
-if(!user)return json({error:'unauthorized'},401);
-if(u.pathname==='/api/leads'&&r.method==='GET'){const q=await e.DB.prepare('SELECT id,name,company,email,phone,source,requirement,status,priority,created_at FROM leads WHERE tenant_id=? ORDER BY datetime(created_at) DESC LIMIT 100').bind(user.tenant_id).all();return json({leads:q.results})}
-if(u.pathname==='/api/leads'&&r.method==='POST'){const b=await r.json(),lid=uid(),priority=b.priority||(/urgent|today|asap|emergency/i.test(b.requirement||'')?'urgent':'normal');await e.DB.prepare('INSERT INTO leads(id,tenant_id,name,company,email,phone,source,requirement,priority,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(lid,user.tenant_id,b.name||null,b.company||null,b.email||null,b.phone||null,b.source||'website',b.requirement||'',priority,JSON.stringify(b.metadata||{})).run();await audit(e,user,'lead.created',{lid});return json({ok:true,id:lid,priority},201)}
-if(u.pathname==='/api/ai/enquiry'&&r.method==='POST'){const b=await r.json(),m=String(b.message||'').slice(0,5000);if(!m)return json({error:'message_required'},400);let reply='Please tell me what needs doing, where it starts, where it needs to go, and when it needs to happen.';if(e.AI)try{const x=await e.AI.run('@cf/zai-org/glm-4.7-flash',{messages:[{role:'system',content:'You are Zorvian, a concise business AI assistant. Qualify enquiries. Never invent prices or availability. Ask for missing details and hand off to a human when needed.'},{role:'user',content:m}]});reply=x?.response||reply}catch(_){}return json({reply})}
-if(u.pathname==='/api/ai/command'&&r.method==='POST'){const b=await r.json(),m=String(b.command||'').slice(0,3000);let reply='Action received. I will prepare the requested change and keep production actions behind approval.';if(e.AI)try{const x=await e.AI.run('@cf/zai-org/glm-4.7-flash',{messages:[{role:'system',content:'You are Zorvian business control AI. Interpret commands for website content, leads, campaigns, follow-ups and reporting. Never claim an action was published or sent unless an integration executed it. Return a short action plan and required system.'},{role:'user',content:m}]});reply=x?.response||reply}catch(_){}await audit(e,user,'ai.command',{command:m});return json({reply})}
-return e.ASSETS.fetch(r)}catch(err){console.error(err);return json({error:'server_error'},500)}}};
+const MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
+
+const SYSTEM_PROMPT = `
+You are Zorvian AI, a professional business operations assistant.
+
+Your job is to help a business owner handle enquiries, appointments,
+bookings, leads, marketing, customer support, quotes, sales and tasks.
+
+Be concise, practical and commercially useful.
+
+Never invent:
+- prices
+- availability
+- appointments
+- customer information
+- stock
+- delivery dates
+- payment status
+- calendar events
+- integrations
+
+If information is missing, clearly say what is missing.
+
+When a human needs to make a decision or perform an action that the
+system cannot actually perform, say so clearly and recommend the next step.
+
+Do not claim that an action was completed unless the system actually
+completed it.
+
+Use headings and bullet points where useful.
+`;
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store"
+    }
+  });
+}
+
+function corsHeaders() {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "Content-Type"
+  };
+}
+
+function responseJson(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      ...corsHeaders()
+    }
+  });
+}
+
+async function readBody(request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
+
+function clean(value, max = 8000) {
+  return String(value ?? "").trim().slice(0, max);
+}
+
+async function askAI(env, message, context = "") {
+  if (!env.AI || typeof env.AI.run !== "function") {
+    throw new Error(
+      "Workers AI is not available. Check that the AI binding is deployed."
+    );
+  }
+
+  const userMessage = context
+    ? `${context}\n\nCustomer/business information:\n${message}`
+    : message;
+
+  const result = await env.AI.run(MODEL, {
+    messages: [
+      {
+        role: "system",
+        content: SYSTEM_PROMPT
+      },
+      {
+        role: "user",
+        content: userMessage
+      }
+    ],
+    max_tokens: 900,
+    temperature: 0.35
+  });
+
+  return (
+    result?.response ||
+    result?.result?.response ||
+    "No response was returned by the AI service."
+  );
+}
+
+const TOOL_CONTEXT = {
+  receptionist: `
+You are operating as an AI receptionist.
+
+Qualify the enquiry.
+Identify:
+1. Customer need
+2. Urgency
+3. Important details already provided
+4. Missing information
+5. Recommended next step
+6. Whether a human should take over
+
+Do not claim availability or pricing unless it was explicitly provided.
+`,
+
+  calendar: `
+You are operating as an AI calendar assistant.
+
+Determine:
+1. What appointment or meeting is being requested
+2. Date and time information
+3. Duration
+4. Attendees
+5. Location or meeting method
+6. Missing information
+7. Suggested calendar entry
+8. Recommended next step
+
+Do not claim that an appointment has actually been created.
+`,
+
+  booking: `
+You are operating as an AI booking assistant.
+
+Determine:
+1. What the customer wants to book
+2. Requested date
+3. Requested time
+4. Duration
+5. Location
+6. Customer contact information
+7. Special requirements
+8. Missing information
+9. Whether a human needs to confirm availability
+
+Do not claim that a booking exists unless the system actually created one.
+`,
+
+  leads: `
+You are operating as an AI sales lead assistant.
+
+Assess:
+1. Lead quality
+2. Customer requirement
+3. Buying intent
+4. Urgency
+5. Estimated opportunity
+6. Missing information
+7. Recommended follow-up
+8. Suggested CRM notes
+`,
+
+  social: `
+You are operating as an AI social media manager.
+
+Create practical social media content.
+Include:
+- suggested post
+- platform
+- audience
+- objective
+- call to action
+- suggested publishing timing
+
+Do not claim that anything has actually been published.
+`,
+
+  marketing: `
+You are operating as an AI marketing manager.
+
+Create a practical campaign plan covering:
+- objective
+- audience
+- offer
+- campaign message
+- channels
+- content ideas
+- call to action
+- measurement
+- next actions
+
+Do not claim that campaigns have actually been launched.
+`,
+
+  support: `
+You are operating as an AI customer support assistant.
+
+Prepare a professional response.
+Identify:
+- issue
+- customer sentiment
+- urgency
+- information needed
+- recommended response
+- whether human escalation is appropriate
+`,
+
+  quotes: `
+You are operating as an AI quotes and sales assistant.
+
+Prepare a quote or sales follow-up structure.
+Identify:
+- requested product/service
+- quantities
+- dates
+- location
+- customer requirement
+- information required before pricing
+- suggested sales follow-up
+
+Never invent pricing.
+`,
+
+  tasks: `
+You are operating as an AI operations assistant.
+
+Turn the request into an actionable task plan.
+Identify:
+- priority
+- owner
+- deadline
+- dependencies
+- individual actions
+- recommended next step
+`,
+
+  intelligence: `
+You are operating as an AI business intelligence assistant.
+
+Analyse the information provided.
+Return:
+- key facts
+- important risks
+- opportunities
+- priorities
+- recommended actions
+- questions that need answering
+`
+};
+
+async function handleAI(request, env, tool) {
+  const body = await readBody(request);
+
+  const message = clean(
+    body.message ||
+    body.command ||
+    body.prompt ||
+    body.enquiry
+  );
+
+  if (!message) {
+    return responseJson(
+      { error: "Please enter a message." },
+      400
+    );
+  }
+
+  const context =
+    TOOL_CONTEXT[tool] ||
+    `
+You are Zorvian's general business AI assistant.
+
+Understand the request and provide the most useful practical business
+response possible.
+`;
+
+  try {
+    const reply = await askAI(env, message, context);
+
+    return responseJson({
+      ok: true,
+      tool,
+      model: MODEL,
+      reply
+    });
+  } catch (error) {
+    console.error("AI error:", error);
+
+    return responseJson(
+      {
+        ok: false,
+        error:
+          error?.message ||
+          "The AI service could not process this request."
+      },
+      500
+    );
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders()
+      });
+    }
+
+    /*
+     * Health endpoint.
+     *
+     * This is deliberately simple.
+     * It gives us an objective answer as to whether the deployed Worker
+     * actually has the AI binding.
+     */
+    if (url.pathname === "/api/health") {
+      const aiAvailable =
+        !!env.AI &&
+        typeof env.AI.run === "function";
+
+      return responseJson({
+        ok: aiAvailable,
+        service: "Zorvian AI",
+        worker: "zorvian-platform",
+        ai: aiAvailable,
+        model: MODEL,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (url.pathname === "/api/ai/ask" && request.method === "POST") {
+      return handleAI(request, env, "general");
+    }
+
+    if (
+      url.pathname === "/api/ai/enquiry" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "receptionist");
+    }
+
+    if (
+      url.pathname === "/api/ai/receptionist" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "receptionist");
+    }
+
+    if (
+      url.pathname === "/api/ai/calendar" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "calendar");
+    }
+
+    if (
+      url.pathname === "/api/ai/booking" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "booking");
+    }
+
+    if (
+      url.pathname === "/api/ai/leads" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "leads");
+    }
+
+    if (
+      url.pathname === "/api/ai/social" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "social");
+    }
+
+    if (
+      url.pathname === "/api/ai/marketing" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "marketing");
+    }
+
+    if (
+      url.pathname === "/api/ai/support" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "support");
+    }
+
+    if (
+      url.pathname === "/api/ai/quotes" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "quotes");
+    }
+
+    if (
+      url.pathname === "/api/ai/tasks" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "tasks");
+    }
+
+    if (
+      url.pathname === "/api/ai/intelligence" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "intelligence");
+    }
+
+    if (
+      url.pathname === "/api/ai/command" &&
+      request.method === "POST"
+    ) {
+      return handleAI(request, env, "general");
+    }
+
+    /*
+     * API requests that weren't recognised.
+     */
+    if (url.pathname.startsWith("/api/")) {
+      return responseJson(
+        {
+          ok: false,
+          error: "API endpoint not found."
+        },
+        404
+      );
+    }
+
+    /*
+     * Static website.
+     */
+    if (env.ASSETS) {
+      return env.ASSETS.fetch(request);
+    }
+
+    return new Response(
+      "Zorvian AI is running, but the static asset binding is unavailable.",
+      {
+        status: 500,
+        headers: {
+          "content-type": "text/plain; charset=utf-8"
+        }
+      }
+    );
+  }
+};
