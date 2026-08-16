@@ -9,12 +9,6 @@ export default {
       return handleVideoApi(request, env);
     }
 
-    if (url.pathname === "/video" || url.pathname === "/video/") {
-      const assetUrl = new URL(request.url);
-      assetUrl.pathname = "/video.html";
-      return env.ASSETS.fetch(new Request(assetUrl.toString(), request));
-    }
-
     return platformWorker.fetch(request, env, ctx);
   },
 };
