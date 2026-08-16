@@ -73,7 +73,7 @@ function extractLeadFacts(message){
   const locations=portfolioLocations||projectLocation;
   const equipment=firstMatch(new RegExp(`\\b(?:may need|might need|will need|need|require|expect to hire|looking to hire)\\s+(.+?)(?=\\s+for\\s+(?:around|about|approximately|roughly)?\\s*${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\.|$)`,"i"),text);
   const requirementDuration=firstMatch(new RegExp(`\\bfor\\s+((?:around|about|approximately|roughly)?\\s*${DURATION_QUANTITY}\\s*${DURATION_UNIT})\\b`,"i"),text);
-  const projectTiming=firstMatch(/\b(?:project\s+)?starting\s+in\s+((?:approximately|about|around|roughly)?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:day|days|week|weeks|month|months))\b/i,text);
+  const projectTiming=firstMatch(/\b(?:project\s+)?starting\s+in\s+(?:[A-Z][A-Za-z -]{2,40}?\s+in\s+)?((?:approximately|about|around|roughly)?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:day|days|week|weeks|month|months))\b/i,text);
   const contractTiming=firstMatch(/\b(?:current\s+supplier\s+contract|supplier\s+contract|contract)\s+(?:ends|expires)\s+([^\.]+?)(?=\.|$)/i,text);
   const ongoing=/\bongoing\b|\bregularly\b|\brepeat\b|\brecurring\b/i.test(text);
   const newSupplier=/\bnew\s+(?:equipment\s+hire\s+)?supplier\b|\breplace\s+(?:our\s+)?supplier\b|\balternative\s+supplier\b/i.test(text);
