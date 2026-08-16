@@ -163,7 +163,7 @@ function receptionistFallback(message) {
     company ? `Business: ${company}` : "Business name was not reliably extracted.",
     location ? `Location: ${location}` : "Location was not clearly provided.",
     duration ? `Duration: ${duration}` : "Duration was not clearly provided.",
-    "The original enquiry contains the full customer wording and should remain the source of truth.",
+    "The original enquiry contains the full customer wording and remains the source of truth.",
     "",
     "Urgency and timing",
     timing ? `Requested timing: ${timing}` : "Timing needs confirmation.",
@@ -256,18 +256,15 @@ async function handleAI(request, env, tool, user) {
     return json({ error: "message_required" }, 400);
   }
 
+  const result = await runAI(env, tool, message, body.context || {});
+
   try {
-    const result = await runAI(env, tool, message, body.context || {});
     await audit(env, user, `ai.${tool}`, { tool, message: message.slice(0, 1000), degraded: result.degraded });
-    return json({ ok: true, tool, reply: result.reply, degraded: result.degraded });
-  } catch (error) {
-    console.error("AI request failed", tool, error);
-    return json({
-      ok: false,
-      error: "ai_unavailable",
-      message: "The AI service could not complete this request. Please try again."
-    }, 503);
+  } catch (auditError) {
+    console.error("AI audit logging failed", auditError);
   }
+
+  return json({ ok: true, tool, reply: result.reply, degraded: result.degraded });
 }
 
 export default {
