@@ -21,6 +21,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Refresh lockfile for security remediation candidate
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund wrangler@4.123.0
+      - name: Retain refreshed lockfile for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardian-remediated-lockfile
+          path: package-lock.json
+          retention-days: 1
       - run: npm ci
       - name: Validate Guardian scripts
         run: |
@@ -53,12 +61,12 @@ jobs:
       - name: Analyze
         uses: github/codeql-action/analyze@v4
         with:
-          output: ../results
+          output: results
           upload: never
       - name: Retain CodeQL SARIF
         uses: actions/upload-artifact@v4
         with:
           name: guardian-codeql-sarif
-          path: ../results/*.sarif
+          path: results/*.sarif
           if-no-files-found: error
           retention-days: 14
