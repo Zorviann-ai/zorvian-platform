@@ -24,7 +24,7 @@ function firstMatch(pattern,text){const m=text.match(pattern);return m?m[1].trim
 function extractReply(result){const c=result?.choices?.[0];return String(result?.response||result?.result?.response||result?.output_text||result?.result?.output_text||result?.text||result?.result?.text||c?.message?.content||c?.text||"").trim();}
 const INTERNAL_MARKERS=/(?:system prompt|system message|developer message|internal instructions|hidden instructions|chain[- ]of[- ]thought|drafting notes|the user wants an output|the output should follow|content_type\s*=|\[instruction\]|```(?:json|text)?)/i;
 const DURATION_QUANTITY="(?:\\d+(?:\\.\\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a|an)";
-const DURATION_UNIT="(?:day|days|week|weeks|hour|hours)";
+const DURATION_UNIT="(?:day|days|week|weeks|hour|hours|month|months)";
 
 function extractReceptionistFacts(message){
   const text=String(message||"").replace(/\s+/g," ").trim();
@@ -68,21 +68,28 @@ function extractLeadFacts(message){
   const phone=firstMatch(/(?:phone(?: number)?|mobile|number)\s*(?:is|:)?\s*((?:\+44\s?\d|0\d)[\d\s-]{8,16})/i,text).replace(/[\s-]+/g,"");
   const email=firstMatch(/\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i,text);
   const properties=firstMatch(/\b(?:manage|manages|managing)\s+(\d+)\s+(?:commercial\s+)?properties\b/i,text);
-  const locations=firstMatch(/\bacross\s+(.+?)(?=\.|,\s*(?:we|our|i)\b|$)/i,text);
-  const equipment=firstMatch(/\b(?:hire|need|require|use)\s+(.+?)\s+regularly\b/i,text)||firstMatch(/\b(?:expect to hire|looking to hire)\s+(.+?)(?=\s+regularly\b|\.|$)/i,text);
+  const portfolioLocations=firstMatch(/\bacross\s+(.+?)(?=\.|,\s*(?:we|our|i)\b|$)/i,text);
+  const projectLocation=firstMatch(/\bproject\s+starting\s+in\s+([A-Z][A-Za-z -]{2,40}?)(?=\s+in\s+(?:approximately|about|around|roughly)?\s*\w+\s+(?:day|days|week|weeks|month|months)\b|\.|,|$)/i,text)||firstMatch(/\bin\s+([A-Z][A-Za-z -]{2,40}?)(?=\s+in\s+(?:approximately|about|around|roughly)?\s*\w+\s+(?:day|days|week|weeks|month|months)\b)/i,text);
+  const locations=portfolioLocations||projectLocation;
+  const equipment=firstMatch(new RegExp(`\\b(?:may need|might need|will need|need|require|expect to hire|looking to hire)\\s+(.+?)(?=\\s+for\\s+(?:around|about|approximately|roughly)?\\s*${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\.|$)`,"i"),text);
+  const requirementDuration=firstMatch(new RegExp(`\\bfor\\s+((?:around|about|approximately|roughly)?\\s*${DURATION_QUANTITY}\\s*${DURATION_UNIT})\\b`,"i"),text);
+  const projectTiming=firstMatch(/\b(?:project\s+)?starting\s+in\s+((?:approximately|about|around|roughly)?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:day|days|week|weeks|month|months))\b/i,text);
   const contractTiming=firstMatch(/\b(?:current\s+supplier\s+contract|supplier\s+contract|contract)\s+(?:ends|expires)\s+([^\.]+?)(?=\.|$)/i,text);
   const ongoing=/\bongoing\b|\bregularly\b|\brepeat\b|\brecurring\b/i.test(text);
   const newSupplier=/\bnew\s+(?:equipment\s+hire\s+)?supplier\b|\breplace\s+(?:our\s+)?supplier\b|\balternative\s+supplier\b/i.test(text);
+  const supplierDecisionPending=/haven['’]?t\s+(?:made|chosen|selected).*supplier|have not\s+(?:made|chosen|selected).*supplier|supplier decision.*not/i.test(text);
   const salesContact=/\bsales\s+team\b|\bsales\s+contact\b|\bcontact me\b|\bcall me\b/i.test(text);
   const nearTerm=/\bnext\s+(?:week|month)\b|\bthis\s+(?:week|month)\b|\burgent\b|\basap\b/i.test(text);
-  return {customer,company,phone,email,properties,locations,equipment,contractTiming,ongoing,newSupplier,salesContact,nearTerm};
+  return {customer,company,phone,email,properties,locations,equipment,requirementDuration,projectTiming,contractTiming,ongoing,newSupplier,supplierDecisionPending,salesContact,nearTerm};
 }
 function leadResponse(message){
   const f=extractLeadFacts(message);const missing=[];
   if(!f.customer)missing.push("contact name");if(!f.company)missing.push("business name");if(!f.phone&&!f.email)missing.push("contact details");
-  const intent=(f.newSupplier||f.ongoing||f.contractTiming)?"Strong buying intent based on stated supplier change, recurring demand or contract timing.":"Buying intent is present but needs further qualification.";
-  const priority=(f.nearTerm||f.contractTiming)?"High priority for sales follow-up because a near-term timing signal was provided.":"Normal priority until timing is clarified.";
-  return ["Lead analysis",f.customer?`Contact: ${f.customer}`:"Contact: not clearly provided.",f.company?`Business: ${f.company}`:"Business: not clearly provided.",f.properties?`Portfolio: ${f.properties} commercial properties`:"Portfolio size: not clearly provided.",f.locations?`Locations: ${f.locations}`:"Locations: not clearly provided.",f.equipment?`Requirement: ${f.equipment}`:"Requirement: not clearly provided.",f.ongoing?"Opportunity type: ongoing / repeat requirement":"Opportunity type: repeat requirement not clearly established.",f.contractTiming?`Supplier timing: contract ${f.contractTiming}`:"Supplier timing: not clearly provided.",f.phone?`Phone: ${f.phone}`:"Phone: not provided.",f.email?`Email: ${f.email}`:"Email: not provided.","","Buying intent",intent,"","Priority",priority,"","Missing information",missing.length?missing.map(x=>`- ${x}`).join("\n"):"No obvious essential lead identity or contact detail is missing.","","Recommended sales action",f.salesContact?"Sales team should contact the prospect using the supplied details, confirm requirements, timing, buying process and next commercial step.":"Qualify requirements, timing, buying process and preferred follow-up method before progressing.","","Commercial safeguards","Do not invent budget, revenue, pricing, probability, contract value, decision-maker status or purchase authority unless the prospect supplied it."].join("\n");
+  const strongIntent=f.newSupplier||f.ongoing||Boolean(f.contractTiming);
+  const intent=f.supplierDecisionPending?"Qualified opportunity with genuine buying intent, but the prospect states that no supplier decision has been made yet.":strongIntent?"Strong buying intent based on stated supplier change, recurring demand or contract timing.":"Buying intent is present but needs further qualification.";
+  const priority=(f.nearTerm||f.contractTiming)?"High priority for sales follow-up because a near-term timing signal was provided.":f.projectTiming?`Sales follow-up appropriate: project timing is ${f.projectTiming}.`:"Normal priority until timing is clarified.";
+  const opportunity=f.ongoing?"ongoing / repeat requirement":f.equipment?"project-based requirement":"requirement type not clearly established";
+  return ["Lead analysis",f.customer?`Contact: ${f.customer}`:"Contact: not clearly provided.",f.company?`Business: ${f.company}`:"Business: not clearly provided.",f.properties?`Portfolio: ${f.properties} commercial properties`:"Portfolio size: not clearly provided.",f.locations?`Location${f.locations.includes(" and ")?"s":""}: ${f.locations}`:"Location: not clearly provided.",f.equipment?`Requirement: ${f.equipment}`:"Requirement: not clearly provided.",f.requirementDuration?`Expected requirement duration: ${f.requirementDuration}`:"Expected requirement duration: not clearly provided.",f.projectTiming?`Project timing: starts in ${f.projectTiming}`:f.contractTiming?`Supplier timing: current supplier contract ends ${f.contractTiming}`:"Timing: not clearly provided.",`Opportunity type: ${opportunity}`,f.phone?`Phone: ${f.phone}`:"Phone: not provided.",f.email?`Email: ${f.email}`:"Email: not provided.","","Buying intent",intent,"","Priority",priority,"","Missing information",missing.length?missing.map(x=>`- ${x}`).join("\n"):"No obvious essential lead identity or contact detail is missing.","","Recommended sales action",f.salesContact?"Sales team should contact the prospect using the supplied details, confirm requirements, timing, buying process and next commercial step.":"Qualify requirements, timing, buying process and preferred follow-up method before progressing.","","Commercial safeguards","Do not invent budget, revenue, pricing, probability, contract value, confirmed order, supplier selection, decision-maker status or purchase authority unless the prospect supplied it."].join("\n");
 }
 
 function cleanReply(reply){const v=String(reply||"").replace(/\\n/g,"\n").replace(/\\r/g,"").replace(/\\{2,}/g,"").trim();return INTERNAL_MARKERS.test(v)?"":v;}
