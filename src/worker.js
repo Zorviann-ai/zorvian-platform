@@ -102,11 +102,11 @@ Return these sections in this order:
 
 Rules:
 - Never ask for information that is already present in the enquiry.
-- Quote or clearly restate the important facts supplied by the customer, including their name, company, location, requested service, duration, timing and contact details when provided.
+- Clearly restate the important facts supplied by the customer, including name, company, location, requested service, duration, timing and contact details when provided.
 - If a detail is missing, name only that missing detail.
 - Do not invent pricing, availability, bookings, company policies or stock.
-- If the customer asks whether something is available, say that availability needs to be checked by the business unless a real availability system is connected.
-- Make the response specific to this enquiry. Do not use a generic response when the enquiry contains usable facts.
+- If availability is requested, say it must be checked by the business unless a real availability system is connected.
+- Make the response specific to this enquiry.
 - If a human needs to act, state exactly what they should do next.`,
   calendar: "You are Zorvian AI Calendar Assistant. Turn the request into a practical appointment or scheduling plan. Identify date, time, duration, attendees, location, conflicts or missing information. Do not claim that an appointment was actually booked.",
   booking: "You are Zorvian AI Booking Assistant. Prepare the information needed to make a booking, identify missing requirements, and produce a clear confirmation checklist. Never claim availability or a completed booking without a real booking integration.",
@@ -121,24 +121,6 @@ Rules:
   ask: "You are Zorvian, a concise business AI assistant. Help the user understand, plan and execute business work. Give practical answers, identify missing information and never pretend an external action happened when it did not.",
 };
 
-function fallbackReply(tool, message) {
-  const names = {
-    receptionist: "The AI service did not return a usable analysis. Please try the enquiry again after the service is checked.",
-    calendar: "The AI service did not return a usable scheduling analysis. Please try again after the service is checked.",
-    booking: "The AI service did not return a usable booking analysis. Please try again after the service is checked.",
-    leads: "The AI service did not return a usable lead analysis. Please try again after the service is checked.",
-    social: "The AI service did not return a usable social response. Please try again after the service is checked.",
-    marketing: "The AI service did not return a usable marketing response. Please try again after the service is checked.",
-    support: "The AI service did not return a usable support response. Please try again after the service is checked.",
-    quotes: "The AI service did not return a usable quote response. Please try again after the service is checked.",
-    tasks: "The AI service did not return a usable task response. Please try again after the service is checked.",
-    intelligence: "The AI service did not return a usable analysis. Please try again after the service is checked.",
-    command: "The AI service did not return a usable command response. Please try again after the service is checked.",
-    ask: "The AI service did not return a usable response. Please try again after the service is checked.",
-  };
-  return names[tool] || `The AI service did not return a usable response for this request.`;
-}
-
 function extractReply(result) {
   return (
     result?.response ||
@@ -151,30 +133,119 @@ function extractReply(result) {
   );
 }
 
+function firstMatch(pattern, text) {
+  const match = text.match(pattern);
+  return match ? match[1].trim() : "";
+}
+
+function receptionistFallback(message) {
+  const text = message.replace(/\s+/g, " ").trim();
+  const name = firstMatch(/(?:my name is|i am|i'm)\s+([A-Z][A-Za-z' -]{1,60}?)(?:\.|,|\s+i |\s+from |\s+and |\s+i run)/i, text);
+  const company = firstMatch(/(?:i run|i own|i work for|from)\s+(?:a\s+)?(.+?)(?:\s+in\s+|\.\s+i need|\.\s+we need|\.\s+i'm|\.\s+we're)/i, text);
+  const location = firstMatch(/(?:in|near)\s+([A-Z][A-Za-z -]{2,40})(?:\.|,|\s+i need|\s+and|\s+for)/i, text);
+  const phone = firstMatch(/(?:phone|mobile|number|contact me at)\s*(?:is|:)?\s*(0\d[\d\s]{8,14})/i, text).replace(/\s+/g, " ");
+  const duration = firstMatch(/(?:for|lasting)\s+(\d+(?:\.\d+)?\s*(?:day|days|week|weeks|hour|hours))/i, text);
+  const timing = firstMatch(/(?:starting|from|on)\s+([^,.]+(?:next\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|week|month)[^,.]*)/i, text);
+  const service = firstMatch(/(?:need to|want to|looking to)\s+(?:hire|rent|book|buy|arrange|order)\s+(.+?)(?:\s+for\s+\d|\s+starting|\s+on\s+|\.|$)/i, text);
+  const need = service || firstMatch(/(?:need to|want to|looking to)\s+(.+?)(?:\.|$)/i, text) || "Customer requirement is present in the enquiry.";
+  const hasAvailabilityQuestion = /available|availability|in stock|free/i.test(text);
+  const missing = [];
+  if (!location) missing.push("exact delivery or job location");
+  if (!timing && !/next\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i.test(text)) missing.push("confirmed start date/time");
+  if (!/email/i.test(text) && !/@/.test(text)) missing.push("email address, if written confirmation is required");
+
+  return [
+    "Customer need",
+    need,
+    "",
+    "Details already provided",
+    name ? `Customer: ${name}` : "Customer name was not reliably extracted.",
+    company ? `Business: ${company}` : "Business name was not reliably extracted.",
+    location ? `Location: ${location}` : "Location was not clearly provided.",
+    duration ? `Duration: ${duration}` : "Duration was not clearly provided.",
+    "The original enquiry contains the full customer wording and should remain the source of truth.",
+    "",
+    "Urgency and timing",
+    timing ? `Requested timing: ${timing}` : "Timing needs confirmation.",
+    /urgent|asap|immediately|today|emergency/i.test(text) ? "Urgency: high based on the customer's wording." : "Urgency: normal unless the business determines otherwise.",
+    "",
+    "Contact details provided",
+    phone ? `Phone: ${phone}` : "Phone number was not clearly identified.",
+    "",
+    "Missing information",
+    missing.length ? missing.map(item => `- ${item}`).join("\n") : "No obvious essential detail is missing from the supplied enquiry.",
+    "",
+    "Recommended next action",
+    hasAvailabilityQuestion
+      ? "Check real equipment/service availability for the requested period, then contact the customer with the result."
+      : "Review the captured requirement and confirm any missing booking details before contacting the customer.",
+    "",
+    "Human handoff",
+    "A team member should take over for availability confirmation and any commercial or booking commitment."
+  ].join("\n");
+}
+
+function genericFallback(tool, message) {
+  if (tool === "receptionist") return receptionistFallback(message);
+  const labels = {
+    calendar: "Calendar preparation",
+    booking: "Booking preparation",
+    leads: "Lead analysis",
+    social: "Social media planning",
+    marketing: "Marketing planning",
+    support: "Customer support preparation",
+    quotes: "Sales and quote preparation",
+    tasks: "Task planning",
+    intelligence: "Business intelligence analysis",
+    command: "Business command planning",
+    ask: "Business AI response",
+  };
+  return `${labels[tool] || "Business analysis"}\n\nThe AI model is temporarily unavailable, so Zorvian has safely retained the request without inventing an answer. Please retry once the AI service is available.`;
+}
+
 async function runAI(env, tool, message, context = {}) {
   const system = TOOL_PROMPTS[tool] || TOOL_PROMPTS.ask;
+  const userContent = context && Object.keys(context).length
+    ? `${message}\n\nContext:\n${JSON.stringify(context)}`
+    : message;
 
   if (!env.AI || typeof env.AI.run !== "function") {
-    throw new Error("Workers AI binding is unavailable");
+    return { reply: genericFallback(tool, message), degraded: true, reason: "binding_unavailable" };
   }
 
-  const result = await env.AI.run(AI_MODEL, {
-    messages: [
-      { role: "system", content: system },
-      {
-        role: "user",
-        content: context && Object.keys(context).length
-          ? `${message}\n\nContext:\n${JSON.stringify(context)}`
-          : message,
-      },
-    ],
-    max_tokens: 900,
-    temperature: 0.2,
-  });
+  let lastError = null;
 
-  const reply = extractReply(result);
-  if (!reply) throw new Error("Workers AI returned no response text");
-  return reply;
+  try {
+    const result = await env.AI.run(AI_MODEL, {
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userContent },
+      ],
+      max_tokens: 900,
+      temperature: 0.2,
+    });
+    const reply = extractReply(result);
+    if (reply) return { reply, degraded: false };
+    lastError = new Error("Workers AI returned no response text");
+  } catch (error) {
+    lastError = error;
+  }
+
+  try {
+    const result = await env.AI.run(AI_MODEL, {
+      prompt: `${system}\n\nCustomer/business request:\n${userContent}`,
+      max_tokens: 900,
+      temperature: 0.2,
+    });
+    const reply = extractReply(result);
+    if (reply) return { reply, degraded: false };
+    lastError = new Error("Workers AI prompt call returned no response text");
+  } catch (error) {
+    lastError = error;
+  }
+
+  console.error("AI inference failed; using safe fallback", tool, lastError);
+  return { reply: genericFallback(tool, message), degraded: true, reason: "model_unavailable" };
 }
 
 async function handleAI(request, env, tool, user) {
@@ -186,9 +257,9 @@ async function handleAI(request, env, tool, user) {
   }
 
   try {
-    const reply = await runAI(env, tool, message, body.context || {});
-    await audit(env, user, `ai.${tool}`, { tool, message: message.slice(0, 1000) });
-    return json({ ok: true, tool, reply });
+    const result = await runAI(env, tool, message, body.context || {});
+    await audit(env, user, `ai.${tool}`, { tool, message: message.slice(0, 1000), degraded: result.degraded });
+    return json({ ok: true, tool, reply: result.reply, degraded: result.degraded });
   } catch (error) {
     console.error("AI request failed", tool, error);
     return json({
@@ -205,11 +276,14 @@ export default {
 
     try {
       if (url.pathname === "/api/health" && request.method === "GET") {
+        const aiConfigured = Boolean(env.AI && typeof env.AI.run === "function");
+        const dbConfigured = Boolean(env.DB);
         return json({
           ok: true,
           service: "zorvian-platform",
-          aiConfigured: Boolean(env.AI),
-          dbConfigured: Boolean(env.DB),
+          aiConfigured,
+          dbConfigured,
+          aiModel: AI_MODEL,
           time: now(),
         });
       }
