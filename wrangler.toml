@@ -5,12 +5,26 @@ compatibility_date = "2026-08-01"
 [assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = true
-
-[ai]
-binding = "AI"
+run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "zorvian-db"
 database_id = "90a4c2dc-02e0-49bd-8ae1-525483043bca"
+
+[env.production]
+name = "zorvian-platform-production"
+compatibility_date = "2026-08-01"
+
+[env.production.assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "zorvian-db"
+database_id = "90a4c2dc-02e0-49bd-8ae1-525483043bca"
+
+[env.production.ai]
+binding = "AI"
