@@ -4,8 +4,9 @@ const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
 const JSON_HEADERS = { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" };
 
 const TOOL_PROMPTS = {
-  receptionist: `You are Zorvian AI Receptionist. Read the entire customer enquiry carefully and respond to the actual information provided.
-Return these sections in this order:
+  receptionist: `You are Zorvian AI Receptionist. Read the entire customer enquiry and produce one finished business response.
+
+Return exactly these seven sections and then STOP:
 1. Customer need
 2. Details already provided
 3. Urgency and timing
@@ -13,13 +14,18 @@ Return these sections in this order:
 5. Missing information
 6. Recommended next action
 7. Human handoff
+
 Rules:
-- Never ask for information that is already present.
-- Restate important supplied facts including name, company, location, service, duration, timing and contact details when provided.
-- Name only genuinely missing details.
-- Never invent pricing, availability, bookings, policies or stock.
-- If availability is requested, say it must be checked unless a real availability system is connected.
-- Make the response specific to this enquiry.`,
+- Use only facts stated in the customer's enquiry.
+- Never ask for or label as missing information that is already provided.
+- Do not infer urgency from the date alone. If the customer did not use urgent language, say urgency was not explicitly stated.
+- Do not invent payment requirements, delivery requirements, policies, pricing, availability, stock, exact site details or other business requirements.
+- If availability is requested, say availability must be checked by the business unless a real availability system is connected.
+- For missing information, include only information genuinely needed to proceed and not supplied by the customer. If unsure whether something is required, do not list it as missing.
+- The customer's original wording is the source of truth.
+- Keep the answer concise and professional.
+- Do not say "Thanks" or add a preamble.
+- Do not continue after section 7. Do not write internal thoughts, drafting notes, "Wait", "I need to", or any self-correction.`,
   calendar: "You are Zorvian AI Calendar Assistant. Turn the request into a practical scheduling plan. Identify date, time, duration, attendees, location, conflicts and missing information. Never claim an appointment was actually created.",
   booking: "You are Zorvian AI Booking Assistant. Prepare the information required for a booking, identify missing requirements and produce a clear confirmation checklist. Never claim availability or a completed booking without a real integration.",
   leads: "You are Zorvian AI Lead Intelligence Assistant. Assess buying intent, urgency, opportunity quality, missing information and the best next sales action. Never invent facts.",
@@ -68,6 +74,22 @@ function extractReply(result) {
   ).trim();
 }
 
+function cleanReply(reply, tool) {
+  let text = String(reply || "")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "")
+    .replace(/\\{2,}/g, "")
+    .trim();
+
+  if (tool === "receptionist") {
+    text = text.replace(/^Thanks[.!]?\s*/i, "");
+    const runaway = text.search(/\n(?:Wait\b|I need to\b|Let me\b|Hold on\b|I should\b)/i);
+    if (runaway >= 0) text = text.slice(0, runaway).trim();
+  }
+
+  return text;
+}
+
 async function runAI(env, tool, message) {
   if (!env.AI || typeof env.AI.run !== "function") {
     return { ok: false, error: "Workers AI binding is not available." };
@@ -79,13 +101,18 @@ async function runAI(env, tool, message) {
     { role: "user", content: message }
   ];
 
+  const generation = {
+    messages,
+    max_completion_tokens: tool === "receptionist" ? 520 : 700,
+    temperature: 0.1,
+    top_p: 0.8,
+    repetition_penalty: 1.12,
+    frequency_penalty: 0.35
+  };
+
   try {
-    const result = await env.AI.run(AI_MODEL, {
-      messages,
-      max_completion_tokens: 900,
-      temperature: 0.2
-    });
-    const reply = extractReply(result);
+    const result = await env.AI.run(AI_MODEL, generation);
+    const reply = cleanReply(extractReply(result), tool);
     if (reply) return { ok: true, reply, degraded: false };
     console.error("Workers AI returned no extractable text", JSON.stringify(result));
   } catch (error) {
@@ -95,10 +122,13 @@ async function runAI(env, tool, message) {
   try {
     const result = await env.AI.run(AI_MODEL, {
       prompt: `${system}\n\nCustomer/business request:\n${message}`,
-      max_completion_tokens: 900,
-      temperature: 0.2
+      max_tokens: tool === "receptionist" ? 520 : 700,
+      temperature: 0.1,
+      top_p: 0.8,
+      repetition_penalty: 1.12,
+      frequency_penalty: 0.35
     });
-    const reply = extractReply(result);
+    const reply = cleanReply(extractReply(result), tool);
     if (reply) return { ok: true, reply, degraded: false };
     console.error("Workers AI prompt call returned no extractable text", JSON.stringify(result));
   } catch (error) {
