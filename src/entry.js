@@ -48,16 +48,16 @@ function calendarResponse(message){const f=extractCalendarFacts(message),missing
 
 function extractBookingFacts(message){
   const text=String(message||"").replace(/\s+/g," ").trim();
-  const customer=firstMatch(/\bfor\s+([A-Z][A-Za-z' -]{1,60}?)(?=\s+from\b|\.|,|$)/,text)||firstMatch(/\b(?:customer|client)\s*(?:is|:)?\s*([A-Z][A-Za-z' -]{1,60}?)(?=\.|,|$)/i,text);
-  const company=firstMatch(/\bfrom\s+(.+?)(?=\.|,\s*(?:she|he|they)\b|$)/i,text);
-  let service=firstMatch(new RegExp(`(?:wants? to|needs? to|looking to)\\s+(?:hire|rent|book|buy|arrange|order)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+from\\b|\\s+in\\s+[A-Z]|\\.|$)`,"i"),text)||firstMatch(new RegExp(`(?:prepare|create|make)\\s+(?:a\\s+)?booking.*?(?:for|to hire|to rent)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+in\\s+[A-Z]|\\.|$)`,"i"),text);
+  const customer=firstMatch(/\bfor\s+([A-Z][A-Za-z' -]{1,60}?)(?=\s+from\b|\.|,|$)/,text)||firstMatch(/(?:my name is|i am|i'm)\s+([A-Z][A-Za-z' -]{1,60}?)(?=\s+from\b|\.|,|$)/i,text)||firstMatch(/\b(?:customer|client)\s*(?:is|:)?\s*([A-Z][A-Za-z' -]{1,60}?)(?=\.|,|$)/i,text);
+  const company=firstMatch(/\bfrom\s+(.+?)(?=\.|,\s*(?:she|he|they|i)\b|$)/i,text);
+  const service=firstMatch(new RegExp(`(?:wants? to|needs? to|looking to|i need to)\\s+(?:hire|rent|book|buy|arrange|order)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+from\\b|\\s+in\\s+[A-Z]|\\.|$)`,"i"),text)||firstMatch(new RegExp(`(?:prepare|create|make)\\s+(?:a\\s+)?booking.*?(?:for|to hire|to rent)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+in\\s+[A-Z]|\\.|$)`,"i"),text);
   const duration=firstMatch(new RegExp(`\\bfor\\s+(${DURATION_QUANTITY}\\s*${DURATION_UNIT})\\b`,"i"),text);
   const start=firstMatch(/\bstarting\s+((?:(?:next|this)\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|today|tomorrow|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)/i,text);
-  const location=firstMatch(/\bin\s+([A-Z][A-Za-z -]{2,40})(?=\.|,|\s+(?:her|his|their)\b|$)/,text);
+  const rawLocation=firstMatch(/\bin\s+([A-Z][A-Za-z -]{2,40})(?=\.|,|\s+(?:starting|from|next|this|today|tomorrow|her|his|their|my)\b|$)/i,text);
+  const location=rawLocation.replace(/\s+starting\s+.*$/i,"").trim();
   const phone=firstMatch(/(?:phone(?: number)?|mobile|number)\s*(?:is|:)?\s*((?:\+44\s?\d|0\d)[\d\s-]{8,16})/i,text).replace(/[\s-]+/g,"");
   const email=firstMatch(/\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i,text);
-  const availabilityNeedsCheck=/do not confirm availability|availability.*check|check.*availability|available/i.test(text);
-  return {customer,company,service,duration,start,location,phone,email,availabilityNeedsCheck};
+  return {customer,company,service,duration,start,location,phone,email};
 }
 function bookingResponse(message){const f=extractBookingFacts(message),missing=[];if(!f.customer)missing.push("customer name");if(!f.service)missing.push("service or item required");if(!f.duration)missing.push("hire duration");if(!f.start)missing.push("start date");if(!f.location)missing.push("location");if(!f.phone&&!f.email)missing.push("customer contact details");return ["Booking preparation",f.customer?`Customer: ${f.customer}`:"Customer: not clearly provided.",f.company?`Business: ${f.company}`:"Business: not clearly provided.",f.service?`Service: ${f.service}`:"Service: not clearly provided.",f.duration?`Duration: ${f.duration}`:"Duration: not provided.",f.start?`Start: ${f.start}`:"Start: not provided.",f.location?`Location: ${f.location}`:"Location: not provided.",f.phone?`Phone: ${f.phone}`:"Phone: not provided.",f.email?`Email: ${f.email}`:"Email: not provided.","","Missing information",missing.length?missing.map(x=>`- ${x}`).join("\n"):"No obvious essential booking detail is missing from the supplied request.","","Availability","Availability has not been confirmed. Check live stock/service availability before making any commitment.","","Commercial controls","No price, deposit, payment term, delivery condition or policy has been invented or confirmed.","","Next action",missing.length?"Confirm the missing booking details, then check availability before progressing the booking.":"Check availability for the requested item/service and period, then contact the customer with the result.","","Status","Booking prepared only. No booking has been created, reserved, charged or confirmed."].join("\n");}
 
