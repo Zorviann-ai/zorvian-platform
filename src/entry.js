@@ -53,8 +53,8 @@ function extractBookingFacts(message){
   const service=firstMatch(new RegExp(`(?:wants? to|needs? to|looking to|i need to)\\s+(?:hire|rent|book|buy|arrange|order)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+from\\b|\\s+in\\s+[A-Z]|\\.|$)`,"i"),text)||firstMatch(new RegExp(`(?:prepare|create|make)\\s+(?:a\\s+)?booking.*?(?:for|to hire|to rent)\\s+(.+?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\s+starting\\b|\\s+in\\s+[A-Z]|\\.|$)`,"i"),text);
   const duration=firstMatch(new RegExp(`\\bfor\\s+(${DURATION_QUANTITY}\\s*${DURATION_UNIT})\\b`,"i"),text);
   const start=firstMatch(/\bstarting\s+((?:(?:next|this)\s+)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)|today|tomorrow|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)/i,text);
-  const rawLocation=firstMatch(/\bin\s+([A-Z][A-Za-z -]{2,40})(?=\.|,|\s+(?:starting|from|next|this|today|tomorrow|her|his|their|my)\b|$)/i,text);
-  const location=rawLocation.replace(/\s+starting\s+.*$/i,"").trim();
+  const rawLocation=firstMatch(new RegExp(`\\bin\\s+([A-Z][A-Za-z -]{2,40}?)(?=\\s+for\\s+${DURATION_QUANTITY}\\s*${DURATION_UNIT}\\b|\\.|,|\\s+(?:starting|from|next|this|today|tomorrow|her|his|their|my)\\b|$)`,"i"),text);
+  const location=rawLocation.trim();
   const phone=firstMatch(/(?:phone(?: number)?|mobile|number)\s*(?:is|:)?\s*((?:\+44\s?\d|0\d)[\d\s-]{8,16})/i,text).replace(/[\s-]+/g,"");
   const email=firstMatch(/\b([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i,text);
   return {customer,company,service,duration,start,location,phone,email};
