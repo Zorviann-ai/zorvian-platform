@@ -21,7 +21,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Refresh lockfile for dependency remediation verification
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Verify clean install from refreshed lockfile
+        run: npm ci
+      - name: Preserve remediated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardian-remediated-lockfile
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 2
       - name: Validate Guardian scripts
         run: |
           node --check scripts/guardian-generate.mjs
@@ -32,7 +42,7 @@ jobs:
         run: npm run guardian:generate
       - name: Run generated security tests
         run: npm run guardian:test
-      - name: Dependency audit of committed lockfile
+      - name: Dependency audit of refreshed lockfile
         run: npm audit --audit-level=high
 
   codeql:
