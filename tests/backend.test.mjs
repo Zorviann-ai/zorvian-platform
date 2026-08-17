@@ -7,6 +7,9 @@ class FakeDB {
     this.auditRows = [];
     this.leadInserts = [];
     this.sessionDeletes = [];
+    this.sessionInserts = [];
+    this.users = new Map();
+    this.tenants = new Map();
     this.selectedTenant = null;
     this.user = {
       id: "session-1",
@@ -26,14 +29,24 @@ class FakeDB {
     const db = this;
     return {
       bind(...args) {
-        return {
+        const statement = {
+          _sql: sql,
+          _args: args,
           async first() {
             if (/FROM sessions s\s+JOIN users u/i.test(sql)) {
               return args[0] === "session-1" ? db.user : null;
             }
-            if (/SELECT id FROM users WHERE email/i.test(sql)) return null;
-            if (/SELECT id FROM tenants WHERE slug/i.test(sql)) return null;
-            if (/SELECT \* FROM users WHERE email/i.test(sql)) return null;
+            if (/SELECT id FROM users WHERE email/i.test(sql)) {
+              const found = db.users.get(args[0]);
+              return found ? { id: found.id } : null;
+            }
+            if (/SELECT id FROM tenants WHERE slug/i.test(sql)) {
+              const found = [...db.tenants.values()].find((tenant) => tenant.slug === args[0]);
+              return found ? { id: found.id } : null;
+            }
+            if (/SELECT \* FROM users WHERE email/i.test(sql)) {
+              return db.users.get(args[0]) || null;
+            }
             return null;
           },
           async all() {
@@ -59,15 +72,34 @@ class FakeDB {
           async run() {
             if (/INSERT INTO audit_logs/i.test(sql)) db.auditRows.push(args);
             if (/INSERT INTO leads/i.test(sql)) db.leadInserts.push(args);
+            if (/INSERT INTO sessions/i.test(sql)) db.sessionInserts.push(args);
             if (/DELETE FROM sessions WHERE id/i.test(sql)) db.sessionDeletes.push(args[0]);
             return { success: true };
           },
         };
+        return statement;
       },
     };
   }
 
   async batch(statements) {
+    for (const statement of statements) {
+      const sql = statement?._sql || "";
+      const args = statement?._args || [];
+      if (/INSERT INTO tenants/i.test(sql)) {
+        this.tenants.set(args[0], { id: args[0], name: args[1], slug: args[2], website_url: args[3] });
+      }
+      if (/INSERT INTO users/i.test(sql)) {
+        this.users.set(args[3], {
+          id: args[0],
+          tenant_id: args[1],
+          name: args[2],
+          email: args[3],
+          password_hash: args[4],
+          role: args[5],
+        });
+      }
+    }
     return statements.map(() => ({ success: true }));
   }
 }
@@ -106,10 +138,12 @@ test("health reflects required bindings", async () => {
   assert.equal(ok.status, 200);
   assert.equal((await data(ok)).ok, true);
 
-  const missing = await worker.fetch(req("/api/health"), env({ ai: false, db: undefined }));
+  const missing = await worker.fetch(req("/api/health"), { DB: undefined, AI: undefined, ASSETS: { fetch: async () => new Response("asset") } });
   assert.equal(missing.status, 503);
   const payload = await data(missing);
   assert.equal(payload.ok, false);
+  assert.equal(payload.dbConfigured, false);
+  assert.equal(payload.aiConfigured, false);
 });
 
 test("database-backed APIs report database outages as 503", async () => {
@@ -155,12 +189,46 @@ test("registration enforces required identity fields and password length", async
   assert.equal(response.status, 400);
 });
 
+test("registration and login create server sessions with secure cookies", async () => {
+  const database = new FakeDB();
+  const runtime = env({ db: database });
+  const registration = await worker.fetch(
+    req("/api/auth/register", {
+      method: "POST",
+      body: { name: "Alice", business: "Example Ltd", email: "alice@example.com", password: "correct-horse-battery" },
+    }),
+    runtime,
+  );
+  assert.equal(registration.status, 200);
+  assert.equal(database.users.has("alice@example.com"), true);
+  assert.equal(database.sessionInserts.length, 1);
+  const registerCookie = registration.headers.get("set-cookie") || "";
+  assert.match(registerCookie, /HttpOnly/i);
+  assert.match(registerCookie, /Secure/i);
+  assert.match(registerCookie, /SameSite=Lax/i);
+
+  const login = await worker.fetch(
+    req("/api/auth/login", {
+      method: "POST",
+      body: { email: "alice@example.com", password: "correct-horse-battery" },
+    }),
+    runtime,
+  );
+  assert.equal(login.status, 200);
+  assert.equal(database.sessionInserts.length, 2);
+  const loginPayload = await data(login);
+  assert.equal(loginPayload.user.email, "alice@example.com");
+  assert.match(login.headers.get("set-cookie") || "", /HttpOnly/i);
+});
+
 test("invalid login credentials return 401 without creating a session", async () => {
+  const database = new FakeDB();
   const response = await worker.fetch(
     req("/api/auth/login", { method: "POST", body: { email: "missing@example.com", password: "not-a-real-password" } }),
-    env(),
+    env({ db: database }),
   );
   assert.equal(response.status, 401);
+  assert.equal(database.sessionInserts.length, 0);
 });
 
 test("AI routes reject unsupported methods", async () => {
