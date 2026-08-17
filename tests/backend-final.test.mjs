@@ -128,6 +128,17 @@ test('health is private and correctly reflects AI and database bindings after lo
   assert.deepEqual((await json(missing)).ok, false);
 });
 
+test('public login shell remains reachable while BOS APIs stay locked', async () => {
+  const db = new MemoryDB();
+  const env = {DB:db, ASSETS:{fetch:()=>new Response('<main id="login-shell">Secure Client Access</main>', {headers:{'content-type':'text/html'}})}};
+  const shell = await worker.fetch(request('/'), env);
+  assert.equal(shell.status, 200);
+  assert.match(await shell.text(), /Secure Client Access/);
+
+  const leads = await worker.fetch(request('/api/leads'), env);
+  assert.equal(leads.status, 401);
+});
+
 test('public self-registration is disabled without a Zorvian invitation', async () => {
   const db = new MemoryDB();
   const response = await worker.fetch(request('/api/auth/register',{method:'POST',body:{name:'Public User',email:'public@example.com',password:'correct-horse-123',business:'Public Co'}}),{DB:db,ASSETS:{fetch:()=>new Response('asset')}});

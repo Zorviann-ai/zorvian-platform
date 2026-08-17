@@ -376,9 +376,8 @@ export default {
         return handleAI(request, env, tool, user);
       }
 
-      if (!user) return json({ error: "unauthorized" }, 401);
-
       if (url.pathname === "/api/leads" && request.method === "GET") {
+        if (!user) return json({ error: "unauthorized" }, 401);
         const results = await env.DB.prepare(
           `SELECT id,name,company,email,phone,source,requirement,status,priority,created_at
            FROM leads WHERE tenant_id = ? ORDER BY datetime(created_at) DESC LIMIT 100`
@@ -387,6 +386,7 @@ export default {
       }
 
       if (url.pathname === "/api/leads" && request.method === "POST") {
+        if (!user) return json({ error: "unauthorized" }, 401);
         const body = await request.json();
         const leadId = uid();
         const priority = body.priority || (/urgent|today|asap|emergency/i.test(body.requirement || "") ? "urgent" : "normal");
@@ -396,6 +396,11 @@ export default {
         ).bind(leadId, user.tenant_id, body.name || null, body.company || null, body.email || null, body.phone || null, body.source || "website", body.requirement || "", priority, JSON.stringify(body.metadata || {})).run();
         await audit(env, user, "lead.created", { leadId });
         return json({ ok: true, id: leadId, priority }, 201);
+      }
+
+      if (url.pathname.startsWith("/api/")) {
+        if (!user) return json({ error: "unauthorized" }, 401);
+        return json({ error: "not_found" }, 404);
       }
 
       return env.ASSETS.fetch(request);
