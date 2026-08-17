@@ -1,0 +1,29 @@
+name: Zorvian Backend Check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/zorvian-backend-completion]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Core backend regression suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Run backend checks
+        run: npm run backend:check
+      - name: Validate Worker production bundle
+        run: npx wrangler deploy --dry-run --env production
+      - name: Validate initial D1 migration locally
+        run: npx wrangler d1 execute zorvian-db --local --file=./0001_initial.sql
