@@ -1,0 +1,32 @@
+name: Zorvian Backend Final Check
+
+on:
+  push:
+    branches:
+      - audit/backend-final-checks
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  backend-final:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+      - name: JavaScript syntax
+        run: |
+          node --check src/entry.js
+          node --check src/worker.js
+      - name: Backend operational tests
+        run: npm run test:backend
+      - name: Worker dry-run bundle
+        run: npx wrangler deploy --dry-run --env production
+      - name: D1 schema parse
+        run: npx wrangler d1 execute zorvian-db --local --file=./0001_initial.sql
