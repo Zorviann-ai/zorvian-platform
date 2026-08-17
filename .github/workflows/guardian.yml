@@ -36,6 +36,31 @@ jobs:
       - name: Audit committed dependency state
         run: npm audit --audit-level=high
 
+  lockfile-refresh-check:
+    name: Verify safe Wrangler upgrade
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Regenerate candidate dependency state without committing
+        run: npm install --package-lock-only --ignore-scripts --save-dev wrangler@4.123.0
+      - name: Verify upgraded dependency state
+        run: npm ci --ignore-scripts
+      - name: Block high severity dependency vulnerabilities
+        run: npm audit --audit-level=high
+      - name: Upload reviewed candidate lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardian-package-lock-candidate
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 7
+
   codeql:
     name: CodeQL security review
     runs-on: ubuntu-latest
