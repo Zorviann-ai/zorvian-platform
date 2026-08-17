@@ -19,7 +19,6 @@ async function walk(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
   const out = [];
   for (const entry of entries) {
-    if (entry.name.startsWith('.env')) continue;
     if (ignoredDirs.has(entry.name)) continue;
     const full = join(dir, entry.name);
     if (entry.isDirectory()) out.push(...await walk(full));
