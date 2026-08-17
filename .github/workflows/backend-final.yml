@@ -8,38 +8,18 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-
 jobs:
   backend-final:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: audit/backend-final-checks
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Remediate Wrangler dependency when needed
-        if: github.actor != 'github-actions[bot]'
-        run: npm install --save-dev --save-exact wrangler@4.123.0 --ignore-scripts
       - name: Dependency audit
         run: npm audit --audit-level=high
-      - name: Persist dependency remediation
-        if: github.actor != 'github-actions[bot]'
-        run: |
-          if git diff --quiet -- package.json package-lock.json; then
-            echo "Dependency files already current."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package.json package-lock.json
-            git commit -m "Upgrade Wrangler and clear dependency audit"
-            git push origin HEAD:audit/backend-final-checks
-          fi
       - name: JavaScript syntax
         run: |
           node --check src/entry.js
