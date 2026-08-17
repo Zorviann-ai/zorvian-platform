@@ -6,6 +6,7 @@ class FakeDB {
   constructor() {
     this.auditRows = [];
     this.leadInserts = [];
+    this.sessionDeletes = [];
     this.selectedTenant = null;
     this.user = {
       id: "session-1",
@@ -32,6 +33,7 @@ class FakeDB {
             }
             if (/SELECT id FROM users WHERE email/i.test(sql)) return null;
             if (/SELECT id FROM tenants WHERE slug/i.test(sql)) return null;
+            if (/SELECT \* FROM users WHERE email/i.test(sql)) return null;
             return null;
           },
           async all() {
@@ -57,6 +59,7 @@ class FakeDB {
           async run() {
             if (/INSERT INTO audit_logs/i.test(sql)) db.auditRows.push(args);
             if (/INSERT INTO leads/i.test(sql)) db.leadInserts.push(args);
+            if (/DELETE FROM sessions WHERE id/i.test(sql)) db.sessionDeletes.push(args[0]);
             return { success: true };
           },
         };
@@ -82,9 +85,10 @@ function env({ ai = true, db = new FakeDB() } = {}) {
   };
 }
 
-function req(path, { method = "GET", body, authenticated = false } = {}) {
+function req(path, { method = "GET", body, authenticated = false, cookie } = {}) {
   const headers = new Headers();
-  if (authenticated) headers.set("Cookie", "zorvian_session=session-1");
+  if (cookie) headers.set("Cookie", cookie);
+  else if (authenticated) headers.set("Cookie", "zorvian_session=session-1");
   if (body !== undefined) headers.set("content-type", "application/json");
   return new Request(`https://zorvian.test${path}`, {
     method,
@@ -115,6 +119,48 @@ test("database-backed APIs report database outages as 503", async () => {
   );
   assert.equal(response.status, 503);
   assert.equal((await data(response)).error, "database_unavailable");
+});
+
+test("valid sessions resolve user and tenant identity", async () => {
+  const response = await worker.fetch(req("/api/me", { authenticated: true }), env());
+  assert.equal(response.status, 200);
+  const payload = await data(response);
+  assert.equal(payload.authenticated, true);
+  assert.equal(payload.user.id, "user-1");
+  assert.equal(payload.tenant.id, "tenant-a");
+});
+
+test("unknown sessions do not authenticate", async () => {
+  const response = await worker.fetch(req("/api/me", { cookie: "zorvian_session=missing" }), env());
+  assert.equal(response.status, 200);
+  assert.equal((await data(response)).authenticated, false);
+});
+
+test("logout deletes the current server session and expires the cookie", async () => {
+  const database = new FakeDB();
+  const response = await worker.fetch(
+    req("/api/auth/logout", { method: "POST", authenticated: true }),
+    env({ db: database }),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(database.sessionDeletes, ["session-1"]);
+  assert.match(response.headers.get("set-cookie") || "", /Max-Age=0/);
+});
+
+test("registration enforces required identity fields and password length", async () => {
+  const response = await worker.fetch(
+    req("/api/auth/register", { method: "POST", body: { name: "Alice", email: "alice@example.com", password: "short" } }),
+    env(),
+  );
+  assert.equal(response.status, 400);
+});
+
+test("invalid login credentials return 401 without creating a session", async () => {
+  const response = await worker.fetch(
+    req("/api/auth/login", { method: "POST", body: { email: "missing@example.com", password: "not-a-real-password" } }),
+    env(),
+  );
+  assert.equal(response.status, 401);
 });
 
 test("AI routes reject unsupported methods", async () => {
@@ -154,7 +200,7 @@ test("all named AI tools are routable when authenticated", async () => {
   }
 });
 
-test("Social and Marketing fail safely when Workers AI is unavailable", async () => {
+test("AI tools fail safely when Workers AI is unavailable", async () => {
   for (const tool of ["social", "marketing", "support", "quotes", "tasks", "intelligence", "command", "ask"]) {
     const database = new FakeDB();
     const response = await worker.fetch(
