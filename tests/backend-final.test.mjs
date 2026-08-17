@@ -104,7 +104,7 @@ const cookieOnly = response => (response.headers.get('set-cookie') || '').split(
 const json = response => response.json();
 
 async function register(db, name, email, business) {
-  const response = await worker.fetch(request('/api/auth/register', {method:'POST',body:{name,email,password:'correct-horse-123',business}}), {DB:db, ASSETS:{fetch:()=>new Response('asset')}});
+  const response = await worker.fetch(request('/api/auth/register', {method:'POST',body:{name,email,password:'correct-horse-123',business,invite_code:'test-invite'}}), {DB:db, REGISTRATION_SECRET:'test-invite', ASSETS:{fetch:()=>new Response('asset')}});
   assert.equal(response.status, 200);
   const cookie = cookieOnly(response);
   assert.match(cookie, /^zorvian_session=/);
@@ -114,15 +114,26 @@ async function register(db, name, email, business) {
   return cookie;
 }
 
-test('health correctly reflects AI and database bindings', async () => {
+test('health is private and correctly reflects AI and database bindings after login', async () => {
   const db = new MemoryDB();
   const ai = { run: async () => ({response:'ok'}) };
-  const good = await worker.fetch(request('/api/health'), {DB:db, AI:ai});
+  const unauthorised = await worker.fetch(request('/api/health'), {DB:db, AI:ai});
+  assert.equal(unauthorised.status,401);
+  const cookie = await register(db,'Health User','health@example.com','Health Co');
+  const good = await worker.fetch(request('/api/health',{cookie}), {DB:db, AI:ai});
   assert.equal(good.status, 200);
   assert.deepEqual((await json(good)).ok, true);
-  const missing = await worker.fetch(request('/api/health'), {DB:db});
+  const missing = await worker.fetch(request('/api/health',{cookie}), {DB:db});
   assert.equal(missing.status, 503);
   assert.deepEqual((await json(missing)).ok, false);
+});
+
+test('public self-registration is disabled without a Zorvian invitation', async () => {
+  const db = new MemoryDB();
+  const response = await worker.fetch(request('/api/auth/register',{method:'POST',body:{name:'Public User',email:'public@example.com',password:'correct-horse-123',business:'Public Co'}}),{DB:db,ASSETS:{fetch:()=>new Response('asset')}});
+  assert.equal(response.status,403);
+  assert.deepEqual(await json(response),{error:'registration_by_invitation_only'});
+  assert.equal(db.users.size,0);
 });
 
 test('registration, login, me, logout and session-cookie controls work', async () => {
@@ -170,7 +181,7 @@ test('tenant isolation prevents one client seeing another client leads', async (
 test('all AI business endpoints require authentication', async () => {
   const db = new MemoryDB();
   const ai = {run:async()=>({response:'ok'})};
-  for (const tool of ['receptionist','calendar','booking','leads','social','marketing','support','quotes','tasks','intelligence','ask','command']) {
+  for (const tool of ['receptionist','calendar','booking','leads','social','marketing','support','quotes','tasks','intelligence','route','documents','ask','command']) {
     const response = await worker.fetch(request(`/api/ai/${tool}`,{method:'POST',body:{message:'test'}}),{DB:db,AI:ai});
     assert.equal(response.status,401,tool);
   }
@@ -198,7 +209,24 @@ test('receptionist, calendar, booking and leads return deterministic structured 
   assert.equal(aiCalls,0);
 });
 
-test('social, marketing, support, quotes, tasks and business intelligence route through the correct AI role', async () => {
+test('receptionist retains a complete weekday date and applies quote and delivery controls', async () => {
+  const db = new MemoryDB();
+  const cookie = await register(db,'Date Tester','date-tester@example.com','Date Test Co');
+  const env = {DB:db,AI:{run:async()=>({response:'should not be used'})},ASSETS:{fetch:()=>new Response('asset')}};
+  const message='Hi, my name is Daniel Harper from Harper Construction Ltd. We need to hire a 5-ton excavator for a project in Derby. We require it for two weeks starting Monday 7 September. Please confirm availability and provide a quotation. You can contact me on 07700 900321 or daniel.harper@example.com. The machine will need to be delivered to the site.';
+  const response = await worker.fetch(request('/api/ai/receptionist',{method:'POST',cookie,body:{message}}),env);
+  assert.equal(response.status,200);
+  const body = await json(response);
+  assert.match(body.reply,/Start: Monday 7 September/);
+  assert.match(body.reply,/Requested timing: Monday 7 September/);
+  assert.match(body.reply,/Phone: 07700900321/);
+  assert.match(body.reply,/exact delivery or site address/);
+  assert.match(body.reply,/Availability has not been checked or confirmed/);
+  assert.match(body.reply,/No price or quotation has been invented or confirmed/);
+  assert.doesNotMatch(body.reply,/Service: .*for a project in Derby/);
+});
+
+test('AI business tools route through the correct specialist role', async () => {
   const db = new MemoryDB();
   const cookie = await register(db,'Tester2','tester2@example.com','Test Co 2');
   const seen = [];
@@ -212,7 +240,8 @@ test('social, marketing, support, quotes, tasks and business intelligence route 
   const env = {DB:db,AI:ai,ASSETS:{fetch:()=>new Response('asset')}};
   const expected = {
     social:'Social Assistant', marketing:'Marketing Assistant', support:'Customer Support Assistant',
-    quotes:'Sales and Quotes Assistant', tasks:'Task Assistant', intelligence:'Business Intelligence Assistant'
+    quotes:'Sales and Quotes Assistant', tasks:'Task Assistant', intelligence:'Business Intelligence Assistant',
+    route:'Route Intelligence Assistant', documents:'Business Document Studio'
   };
   for (const [tool,marker] of Object.entries(expected)) {
     const response = await worker.fetch(request(`/api/ai/${tool}`,{method:'POST',cookie,body:{message:'A realistic business request with supplied facts only.'}}),env);
@@ -223,6 +252,21 @@ test('social, marketing, support, quotes, tasks and business intelligence route 
     assert.equal(body.reply,'Useful, safe test response.');
     assert.match(seen.at(-1),new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),tool);
   }
+});
+
+test('route and document tools enforce their operating boundaries', async () => {
+  const db = new MemoryDB();
+  const cookie = await register(db,'Boundary Tester','boundary@example.com','Boundary Co');
+  const prompts = {};
+  const ai = {run:async (_model,options)=>{const prompt=options.messages?.[0]?.content||'';const user=options.messages?.[1]?.content||'';prompts[user]=prompt;return{response:'Controlled output.'};}};
+  const env = {DB:db,AI:ai,ASSETS:{fetch:()=>new Response('asset')}};
+  await worker.fetch(request('/api/ai/route',{method:'POST',cookie,body:{message:'route-check'}}),env);
+  await worker.fetch(request('/api/ai/documents',{method:'POST',cookie,body:{message:'document-check'}}),env);
+  assert.match(prompts['route-check'],/officially published enforcement zones/i);
+  assert.match(prompts['route-check'],/never identify, track or predict hidden or live police units/i);
+  assert.match(prompts['route-check'],/never help a driver evade enforcement/i);
+  assert.match(prompts['document-check'],/legal or professional review is required/i);
+  assert.match(prompts['document-check'],/do not invent names, dates, prices/i);
 });
 
 test('AI endpoint validates bad requests and blocks internal-prompt leakage', async () => {
@@ -254,9 +298,18 @@ test('AI model failure is surfaced safely instead of fabricating success', async
 
 test('frontend contains every agreed business tool and backend wiring', async () => {
   const html = await fs.readFile(new URL('../public/index.html', import.meta.url),'utf8');
-  for (const tool of ['receptionist','calendar','booking','leads','social','marketing','support','quotes','tasks','intelligence']) {
+  for (const tool of ['receptionist','calendar','booking','leads','social','marketing','support','quotes','tasks','intelligence','route','documents']) {
     assert.match(html,new RegExp(`id=["']${tool}["']|data-page=["']${tool}["']`),tool);
   }
   assert.match(html,/api\('\/ai\/'\+tool/,'generic AI tools use the backend');
   assert.match(html,/api\('\/ai\/social/,'AI Social must use the backend AI endpoint');
+  assert.match(html,/api\('\/ai\/route/,'Route Intelligence must use the authenticated backend AI endpoint');
+  assert.match(html,/api\('\/ai\/documents/,'Document Studio must use the authenticated backend AI endpoint');
+  assert.match(html,/<strong>12<\/strong><span>Business tools<\/span>/,'dashboard must show the real number of business tools');
+  assert.match(html,/<body class="auth-locked">/,'the BOS must start locked');
+  assert.match(html,/id="loginForm"/,'secure login form must be present');
+  assert.match(html,/api\('\/me'/,'the frontend must verify its authenticated session');
+  assert.match(html,/api\('\/auth\/login'/,'the login form must use the authenticated backend');
+  assert.match(html,/api\('\/auth\/logout'/,'the client must be able to end the session');
+  assert.doesNotMatch(html,/api\('\/auth\/register'/,'public self-registration must not be exposed in the BOS');
 });

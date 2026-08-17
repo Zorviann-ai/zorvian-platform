@@ -50,6 +50,19 @@ async function verify(password, stored) {
   return (await hash(password, salt)) === stored;
 }
 
+async function secureEqual(left, right) {
+  const encoder = new TextEncoder();
+  const [leftDigest, rightDigest] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(String(left || ""))),
+    crypto.subtle.digest("SHA-256", encoder.encode(String(right || ""))),
+  ]);
+  const a = new Uint8Array(leftDigest);
+  const b = new Uint8Array(rightDigest);
+  let difference = 0;
+  for (let index = 0; index < a.length; index += 1) difference |= a[index] ^ b[index];
+  return difference === 0;
+}
+
 async function getUser(request, env) {
   const sessionId = getCookie(request, "zorvian_session");
   if (!sessionId || !env.DB) return null;
@@ -117,6 +130,8 @@ Rules:
   quotes: "You are Zorvian AI Sales and Quotes Assistant. Structure the customer's requirements, identify missing quote information and prepare a professional sales follow-up. Never invent prices, discounts or availability.",
   tasks: "You are Zorvian AI Task Assistant. Convert the request into clear priorities, tasks, owners if known, dependencies and deadlines. Do not claim tasks were completed.",
   intelligence: "You are Zorvian Business Intelligence Assistant. Analyse the supplied information, identify key findings, risks, opportunities, priorities and recommended actions. Distinguish facts from assumptions.",
+  route: `You are Zorvian Route Intelligence Assistant. Prepare a lawful operating plan for taxi or private hire, courier, multi-drop delivery, removals, freight or HGV work. Use only the supplied locations, vehicle limits and timing. Never invent distances, travel times, traffic, tolls, restrictions, road conditions or enforcement positions. State that live navigation, verified speed limits, fixed cameras and officially published enforcement zones require connected current routing data. Never identify, track or predict hidden or live police units or mobile enforcement vehicles, and never help a driver evade enforcement. Return journey profile, proposed stop order, vehicle and time-window risks, driver checklist, customer communications, missing information and next action. Distinguish a suggested plan from a route verified by a live mapping provider.`,
+  documents: `You are Zorvian Business Document Studio. Draft polished letters, emails, proposals, tenders, policies, procedures, forms, reports, tables, chart briefs and contract drafts using only confirmed facts. Do not invent names, dates, prices, statistics, clauses, policies, signatures or approvals. Mark missing information with square-bracket placeholders. Put the usable draft first and a short review checklist second. Label contracts and regulated documents Draft for authorised review and require appropriate legal or professional review before issue, reliance or signature. For charts use only supplied values.`,
   command: "You are Zorvian business control AI. Interpret business commands and return a concise action plan, required systems, risks and next steps. Never claim an external action was executed unless a real integration has done it.",
   ask: "You are Zorvian, a concise business AI assistant. Help the user understand, plan and execute business work. Give practical answers, identify missing information and never pretend an external action happened when it did not.",
 };
@@ -273,6 +288,8 @@ export default {
 
     try {
       if (url.pathname === "/api/health" && request.method === "GET") {
+        const healthUser = await getUser(request, env);
+        if (!healthUser) return json({ error: "unauthorized" }, 401);
         const aiConfigured = Boolean(env.AI && typeof env.AI.run === "function");
         const dbConfigured = Boolean(env.DB);
         return json({
@@ -288,6 +305,10 @@ export default {
       if (url.pathname === "/api/auth/register" && request.method === "POST") {
         if (!env.DB) return json({ error: "database_unavailable" }, 503);
         const body = await request.json();
+        const inviteCode = String(body.invite_code || request.headers.get("X-Zorvian-Invite") || "");
+        if (!env.REGISTRATION_SECRET || !(await secureEqual(inviteCode, env.REGISTRATION_SECRET))) {
+          return json({ error: "registration_by_invitation_only" }, 403);
+        }
         const name = String(body.name || "").trim();
         const email = String(body.email || "").trim().toLowerCase();
         const password = String(body.password || "");
@@ -350,7 +371,7 @@ export default {
         if (!user) return json({ error: "unauthorized" }, 401);
         const requestedTool = url.pathname.slice("/api/ai/".length).replace(/\/$/, "");
         const tool = requestedTool === "enquiry" ? "receptionist" : requestedTool === "ask" ? "ask" : requestedTool;
-        const allowed = new Set(["receptionist","calendar","booking","leads","social","marketing","support","quotes","tasks","intelligence","command","ask"]);
+        const allowed = new Set(["receptionist","calendar","booking","leads","social","marketing","support","quotes","tasks","intelligence","route","documents","command","ask"]);
         if (!allowed.has(tool)) return json({ error: "unknown_ai_tool" }, 404);
         return handleAI(request, env, tool, user);
       }
