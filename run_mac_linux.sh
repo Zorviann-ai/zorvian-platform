@@ -1,0 +1,1 @@
+#!/bin/sh\npython3 -m venv .venv\n. .venv/bin/activate\npip install -r requirements.txt\nuvicorn app:app --reload --port 8000\n

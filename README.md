@@ -1,21 +1,36 @@
-# Zorvian Platform — Stage 1
+# Zorvian Core Backend — Next Stage
 
-This is the first real shared Zorvian client platform. It is not a mockup.
+Working local API backend with:
+- SQLite database
+- Tenant-aware records
+- Login/session tokens
+- Role-aware permissions
+- CRM
+- Receptionist routing into CRM + tasks
+- Bookings into confirmation tasks
+- Documents
+- Campaigns
+- Maps/route workflow records
+- Freight/fleet jobs
+- Video production plans
+- Audit log / Guardian foundation
+- Integration registry
 
-## Included
-- Multi-tenant client workspaces
-- Secure login with HttpOnly session cookies
-- PBKDF2 password hashing
-- Tenant-isolated lead records
-- AI command centre
-- AI customer enquiry endpoint
-- Audit log foundation
-- Existing-website integration script
-- Cloudflare Workers + D1 + Workers AI architecture
-- Mobile-first client dashboard
+Run:
 
-## What is NOT claimed as live yet
-CMS publishing, CRM/email sending, social posting, tender submission, AI telephone answering, payments and third-party system actions require their specific integrations. They are deliberately not faked.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app:app --reload --port 8000
+```
 
-## Cost gate
-No paid service is required for local development. Cloudflare currently provides a Free Workers plan and a free Workers AI allocation, but some AI models and usage above included limits require paid usage. Do not activate a paid plan without approval.
+Open `http://127.0.0.1:8000/docs`.
+
+Demo login:
+- admin@zorvian.local
+- zorvian-demo
+
+External telephony, SMS, email, live social publishing, live maps/traffic, payments,
+travel, vehicle data and video rendering remain gated until real provider accounts,
+credentials and commercial permissions are connected.
