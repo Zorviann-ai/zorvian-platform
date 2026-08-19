@@ -7,9 +7,7 @@ on:
       - 'GATE3_INTELLIGENCE.md'
       - 'beta/**'
       - 'intelligence/**'
-      - 'tests/test_gate3_architecture.py'
-      - 'tests/test_gate3_router.py'
-      - 'tests/test_gate3_beta_safety.py'
+      - 'tests/test_gate3_*.py'
       - 'requirements-dev.txt'
       - '.github/workflows/gate3-intelligence.yml'
   pull_request:
@@ -18,9 +16,7 @@ on:
       - 'GATE3_INTELLIGENCE.md'
       - 'beta/**'
       - 'intelligence/**'
-      - 'tests/test_gate3_architecture.py'
-      - 'tests/test_gate3_router.py'
-      - 'tests/test_gate3_beta_safety.py'
+      - 'tests/test_gate3_*.py'
       - 'requirements-dev.txt'
       - '.github/workflows/gate3-intelligence.yml'
 
@@ -37,6 +33,6 @@ jobs:
       - name: Install test dependencies
         run: pip install -r requirements-dev.txt
       - name: Compile intelligence layer
-        run: python -m py_compile intelligence/router.py
+        run: python -m py_compile intelligence/router.py intelligence/evaluation.py
       - name: Gate 3 intelligence acceptance tests
-        run: python -m pytest -q tests/test_gate3_architecture.py tests/test_gate3_router.py tests/test_gate3_beta_safety.py
+        run: python -m pytest -q tests/test_gate3_architecture.py tests/test_gate3_router.py tests/test_gate3_beta_safety.py tests/test_gate3_evaluation.py
