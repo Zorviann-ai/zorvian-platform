@@ -1,0 +1,44 @@
+name: Zorvian Gate 5 Connected Beta Check
+
+on:
+  push:
+    branches: [main, gate5-core-connected-beta]
+    paths:
+      - 'GATE5_CONNECTED_BETA.md'
+      - 'app_gate5.py'
+      - 'Dockerfile'
+      - 'beta/**'
+      - 'intelligence/**'
+      - 'tests/test_gate4_functional_beta.py'
+      - 'tests/test_gate5_*.py'
+      - '.github/workflows/gate5-connected.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'GATE5_CONNECTED_BETA.md'
+      - 'app_gate5.py'
+      - 'Dockerfile'
+      - 'beta/**'
+      - 'intelligence/**'
+      - 'tests/test_gate4_functional_beta.py'
+      - 'tests/test_gate5_*.py'
+      - '.github/workflows/gate5-connected.yml'
+
+jobs:
+  gate5-connected:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install runtime and test dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Compile connected intelligence layer
+        run: python -m py_compile app_gate5.py intelligence/connected.py intelligence/providers.py intelligence/guard.py intelligence/executor.py
+      - name: Gate 5 connected intelligence tests
+        run: python -m pytest -q tests/test_gate5_*.py
+      - name: Gate 4 connected safety regression
+        run: python -m pytest -q tests/test_gate4_functional_beta.py
