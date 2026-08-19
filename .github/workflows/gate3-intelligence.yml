@@ -1,0 +1,29 @@
+name: Zorvian Gate 3 Intelligence Check
+
+on:
+  push:
+    branches: [main, gate3-intelligence-foundation]
+    paths:
+      - 'GATE3_INTELLIGENCE.md'
+      - 'beta/**'
+      - 'tests/test_gate3_architecture.py'
+      - '.github/workflows/gate3-intelligence.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'GATE3_INTELLIGENCE.md'
+      - 'beta/**'
+      - 'tests/test_gate3_architecture.py'
+      - '.github/workflows/gate3-intelligence.yml'
+
+jobs:
+  gate3-intelligence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Gate 3 architecture acceptance tests
+        run: python -m pytest -q tests/test_gate3_architecture.py
