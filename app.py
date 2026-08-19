@@ -5,10 +5,10 @@ from typing import Optional
 import sqlite3, uuid, hashlib, secrets, datetime, os
 
 DB=os.path.join(os.path.dirname(__file__),"zorvian.db")
-app=FastAPI(title="Zorvian Core API",version="0.7.0")
+app=FastAPI(title="Zorvian Core API",version="0.8.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
-def now(): return datetime.datetime.utcnow().isoformat()+"Z"
+def now(): return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00","Z")
 def db():
     c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
 
@@ -26,6 +26,15 @@ def init_db():
     CREATE TABLE IF NOT EXISTS routes(id TEXT PRIMARY KEY,tenant_id TEXT,start TEXT,end TEXT,mode TEXT,notes TEXT,status TEXT,created_at TEXT);
     CREATE TABLE IF NOT EXISTS freight_jobs(id TEXT PRIMARY KEY,tenant_id TEXT,ref TEXT,collection TEXT,delivery TEXT,vehicle TEXT,notes TEXT,status TEXT,created_at TEXT);
     CREATE TABLE IF NOT EXISTS video_projects(id TEXT PRIMARY KEY,tenant_id TEXT,project TEXT,source TEXT,output TEXT,brief TEXT,plan TEXT,status TEXT,created_at TEXT);
+    CREATE TABLE IF NOT EXISTS freshx_opportunities(
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, product TEXT, owner TEXT,
+      market TEXT, stage TEXT, notes TEXT, readiness INTEGER, status TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS tenders(
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, title TEXT, ref TEXT,
+      deadline TEXT, value TEXT, requirements TEXT, analysis TEXT, draft TEXT,
+      readiness INTEGER, status TEXT NOT NULL, created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY,tenant_id TEXT,user_id TEXT,event TEXT,detail TEXT,severity TEXT,created_at TEXT);
     CREATE TABLE IF NOT EXISTS integrations(id TEXT PRIMARY KEY,tenant_id TEXT,provider TEXT,status TEXT,config_json TEXT,created_at TEXT);
     """)
@@ -33,7 +42,7 @@ def init_db():
         tid="tenant_demo"; uid="user_admin"
         cur.execute("INSERT INTO tenants VALUES (?,?,?)",(tid,"Zorvian Demo Tenant",now()))
         cur.execute("INSERT INTO users VALUES (?,?,?,?,?,?)",(uid,tid,"admin@zorvian.local",hashlib.sha256("zorvian-demo".encode()).hexdigest(),"admin",now()))
-        for p in ["telephony","sms","email","calendar","social","maps","payments","travel","vehicle_data","video_render"]:
+        for p in ["telephony","sms","email","calendar","social","maps","payments","travel","vehicle_data","video_render","tender_feeds","freshx_commercial_data"]:
             cur.execute("INSERT INTO integrations VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),tid,p,"not_connected","{}",now()))
     c.commit(); c.close()
 init_db()
@@ -48,6 +57,18 @@ class CampaignIn(BaseModel): channel:str; goal:str; audience:str=""; message:str
 class RouteIn(BaseModel): start:str; end:str; mode:str; notes:str=""
 class FreightIn(BaseModel): ref:str; collection:str; delivery:str; vehicle:str; notes:str=""
 class VideoIn(BaseModel): project:str; source:str; output:str; brief:str
+class FreshXIn(BaseModel):
+    product:str
+    owner:str
+    market:str
+    stage:str="Qualification"
+    notes:str=""
+class TenderIn(BaseModel):
+    title:str
+    ref:str
+    deadline:str
+    value:str=""
+    requirements:str
 
 def current_user(authorization:Optional[str]=Header(None)):
     if not authorization or not authorization.startswith("Bearer "): raise HTTPException(401,"Missing bearer token")
@@ -67,7 +88,7 @@ def score(t):
     return min(99,s)
 
 @app.get("/")
-def root(): return {"service":"Zorvian Core API","version":"0.7.0","status":"online"}
+def root(): return {"service":"Zorvian Core API","version":"0.8.0","status":"online"}
 @app.get("/health")
 def health(): return {"status":"ok","database":"sqlite","external_integrations":"gated"}
 
@@ -75,7 +96,7 @@ def health(): return {"status":"ok","database":"sqlite","external_integrations":
 def login(d:LoginIn):
     c=db(); r=c.execute("SELECT * FROM users WHERE email=? AND password_hash=?",(d.email.lower(),hashlib.sha256(d.password.encode()).hexdigest())).fetchone()
     if not r: c.close(); raise HTTPException(401,"Invalid login")
-    token=secrets.token_urlsafe(32); exp=(datetime.datetime.utcnow()+datetime.timedelta(hours=12)).isoformat()+"Z"
+    token=secrets.token_urlsafe(32); exp=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=12)).isoformat().replace("+00:00","Z")
     c.execute("INSERT INTO sessions VALUES (?,?,?)",(token,r["id"],exp)); c.commit(); c.close()
     return {"token":token,"role":r["role"],"tenant_id":r["tenant_id"]}
 
@@ -159,6 +180,68 @@ def add_freight(d:FreightIn,u=Depends(current_user)):
 def add_video(d:VideoIn,u=Depends(current_user)):
     require(u,"write"); plan=f"PROJECT\n{d.project}\n\nSOURCE\n{d.source}\n\nTARGET OUTPUT\n{d.output}\n\nOBJECTIVE\n{d.brief}\n\nPRODUCTION PLAN\n1. Ingest and index source.\n2. Select strongest scenes.\n3. Build structured edit.\n4. Create captions/title cards.\n5. Produce platform variants.\n6. Apply brand package.\n7. Human review before export."
     vid=str(uuid.uuid4()); c=db(); c.execute("INSERT INTO video_projects VALUES (?,?,?,?,?,?,?,?,?)",(vid,u["tenant_id"],d.project,d.source,d.output,d.brief,plan,"Draft",now())); c.commit(); c.close(); audit(u,"video_plan_created",d.project); return {"id":vid,"plan":plan,"status":"Draft"}
+
+@app.get("/freshx")
+def freshx_list(u=Depends(current_user)):
+    c=db(); rows=c.execute("SELECT * FROM freshx_opportunities WHERE tenant_id=? ORDER BY created_at DESC",(u["tenant_id"],)).fetchall(); c.close()
+    return [dict(x) for x in rows]
+
+@app.post("/freshx")
+def freshx_create(d:FreshXIn,u=Depends(current_user)):
+    require(u,"write")
+    low=d.notes.lower(); readiness=20
+    for k in ["rights","supply","grower","specification","freight","compliance","price","retailer","certification"]:
+        if k in low: readiness+=7
+    readiness=min(90,readiness)
+    fid=str(uuid.uuid4())
+    c=db(); c.execute("INSERT INTO freshx_opportunities VALUES (?,?,?,?,?,?,?,?,?,?)",(fid,u["tenant_id"],d.product,d.owner,d.market,d.stage,d.notes,readiness,"Working",now()))
+    c.commit(); c.close(); audit(u,"freshx_opportunity_created",f"{d.product} · {d.stage}")
+    return {"id":fid,"readiness":readiness,"status":"Working"}
+
+@app.post("/freshx/{freshx_id}/approve")
+def freshx_approve(freshx_id:str,u=Depends(current_user)):
+    require(u,"approve")
+    c=db(); row=c.execute("SELECT id FROM freshx_opportunities WHERE id=? AND tenant_id=?",(freshx_id,u["tenant_id"])).fetchone()
+    if not row: c.close(); raise HTTPException(404,"FreshX opportunity not found")
+    c.execute("UPDATE freshx_opportunities SET status='Stage Approved' WHERE id=?",(freshx_id,)); c.commit(); c.close(); audit(u,"freshx_stage_approved",freshx_id)
+    return {"id":freshx_id,"status":"Stage Approved"}
+
+@app.get("/tenders")
+def tender_list(u=Depends(current_user)):
+    c=db(); rows=c.execute("SELECT * FROM tenders WHERE tenant_id=? ORDER BY deadline,created_at DESC",(u["tenant_id"],)).fetchall(); c.close()
+    return [dict(x) for x in rows]
+
+@app.post("/tenders/analyse")
+def tender_analyse(d:TenderIn,u=Depends(current_user)):
+    require(u,"write")
+    text=d.requirements.lower()
+    signals=["insurance","turnover","experience","references","policy","certificate","method statement","social value","pricing","gdpr","security","quality","environment","health and safety"]
+    found=[k for k in signals if k in text]; gaps=[k for k in signals if k not in text][:6]
+    readiness=min(85,25+len(found)*4)
+    analysis=f"""TENDER ANALYSIS\n\nTENDER\n{d.title}\n\nREFERENCE\n{d.ref}\n\nDEADLINE\n{d.deadline}\n\nESTIMATED VALUE\n{d.value or 'Not supplied'}\n\nREQUIREMENT SIGNALS DETECTED\n{', '.join(found) if found else 'No standard evidence signals detected automatically.'}\n\nPOTENTIAL EVIDENCE / REVIEW GAPS\n{chr(10).join('• Check '+x for x in gaps)}\n\nCONTROL WORKFLOW\n1. Confirm eligibility and go/no-go.\n2. Build requirement/question matrix.\n3. Map requirements to verified company evidence.\n4. Flag missing evidence or professional confirmations.\n5. Draft using confirmed facts only.\n6. Commercial/legal/regulatory review.\n7. Principal approval.\n8. Submit only through an authorised channel.\n"""
+    tid=str(uuid.uuid4())
+    c=db(); c.execute("INSERT INTO tenders VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(tid,u["tenant_id"],d.title,d.ref,d.deadline,d.value,d.requirements,analysis,"",readiness,"Analysed",now()))
+    c.commit(); c.close(); audit(u,"tender_analysed",f"{d.title} · {d.ref}")
+    return {"id":tid,"analysis":analysis,"readiness":readiness,"status":"Analysed"}
+
+@app.post("/tenders/{tender_id}/draft")
+def tender_draft(tender_id:str,u=Depends(current_user)):
+    require(u,"write")
+    c=db(); t=c.execute("SELECT * FROM tenders WHERE id=? AND tenant_id=?",(tender_id,u["tenant_id"])).fetchone()
+    if not t: c.close(); raise HTTPException(404,"Tender not found")
+    draft=f"""EXECUTIVE RESPONSE — WORKING DRAFT\n\nBuyer / Tender: {t['title']}\nReference: {t['ref']}\n\n1. UNDERSTANDING OF REQUIREMENT\nWe have reviewed the supplied requirements and will respond against the buyer's stated outcomes and evidence requirements.\n\n2. DELIVERY APPROACH\n[Insert verified delivery method, resources, timescales and governance.]\n\n3. EXPERIENCE AND EVIDENCE\n[Insert verified case studies, references, accreditations and supporting documents.]\n\n4. QUALITY / RISK / COMPLIANCE\n[Insert only confirmed policies, certifications, insurance and compliance statements.]\n\n5. COMMERCIAL RESPONSE\n[Insert authorised pricing, assumptions and exclusions.]\n\nCONTROL STATUS\nWORKING DRAFT — NOT FOR SUBMISSION.\n"""
+    readiness=min(92,int(t["readiness"] or 0)+10)
+    c.execute("UPDATE tenders SET draft=?,readiness=?,status='Draft' WHERE id=?",(draft,readiness,tender_id)); c.commit(); c.close(); audit(u,"tender_response_drafted",tender_id)
+    return {"id":tender_id,"draft":draft,"readiness":readiness,"status":"Draft"}
+
+@app.post("/tenders/{tender_id}/approve")
+def tender_approve(tender_id:str,u=Depends(current_user)):
+    require(u,"approve")
+    c=db(); t=c.execute("SELECT * FROM tenders WHERE id=? AND tenant_id=?",(tender_id,u["tenant_id"])).fetchone()
+    if not t: c.close(); raise HTTPException(404,"Tender not found")
+    if not t["draft"]: c.close(); raise HTTPException(409,"Create tender draft before approval")
+    c.execute("UPDATE tenders SET readiness=100,status='Principal Approved' WHERE id=?",(tender_id,)); c.commit(); c.close(); audit(u,"tender_principal_approved",tender_id)
+    return {"id":tender_id,"readiness":100,"status":"Principal Approved"}
 
 @app.get("/audit")
 def audit_log(u=Depends(current_user)):
