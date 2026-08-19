@@ -35,4 +35,5 @@ jobs:
           DEV_EXPOSE_TOKENS: '1'
           GUARDIAN_HASH_PEPPER: gate2-ci-pepper-not-production
           ALLOWED_ORIGINS: https://zorvian.co.uk,https://www.zorvian.co.uk
-        run: pytest -q tests/test_gate2.py
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_gate2.py
