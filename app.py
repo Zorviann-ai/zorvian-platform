@@ -11,7 +11,8 @@ APP_VERSION="0.9.0"
 ENV=os.getenv("ZORVIAN_ENV","production").lower()
 DB=os.getenv("SQLITE_PATH",os.path.join(os.path.dirname(__file__),"zorvian.db"))
 SESSION_HOURS=int(os.getenv("SESSION_HOURS","12")); LOCKOUT_MINUTES=int(os.getenv("LOCKOUT_MINUTES","15")); MAX_FAILED_LOGINS=int(os.getenv("MAX_FAILED_LOGINS","5"))
-ALLOWED_ORIGINS=[x.strip() for x in os.getenv("ALLOWED_ORIGINS","https://zorvian.co.uk,https://www.zorvian.co.uk").split(",") if x.strip()]\nPUBLIC_APP_URL=os.getenv("PUBLIC_APP_URL","https://zorvian.co.uk").rstrip("/")
+ALLOWED_ORIGINS=[x.strip() for x in os.getenv("ALLOWED_ORIGINS","https://zorvian.co.uk,https://www.zorvian.co.uk").split(",") if x.strip()]
+PUBLIC_APP_URL=os.getenv("PUBLIC_APP_URL","https://zorvian.co.uk").rstrip("/")
 ph=PasswordHasher(time_cost=2,memory_cost=19456,parallelism=1)
 app=FastAPI(title="Zorvian Core API",version=APP_VERSION,docs_url=None if ENV=="production" else "/docs",redoc_url=None if ENV=="production" else "/redoc")
 app.add_middleware(CORSMiddleware,allow_origins=ALLOWED_ORIGINS,allow_credentials=False,allow_methods=["GET","POST","PATCH","DELETE","OPTIONS"],allow_headers=["Authorization","Content-Type","X-Request-ID"])
