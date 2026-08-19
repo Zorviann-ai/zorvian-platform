@@ -13,7 +13,7 @@ def valid_env(name="staging", db_id="staging-db"):
         "ZORVIAN_DATABASE_ID": db_id,
         "SQLITE_PATH": "/data/zorvian/" + name + ".db",
         "GUARDIAN_HASH_PEPPER": "p" * 48,
-        "ALLOWED_ORIGINS": "https://" + name + ".zorvian.co.uk",
+        "ALLOWED_ORIGINS": "https://" + name + ".zorvian.co.uk",\n        "PUBLIC_APP_URL": "https://" + name + ".zorvian.co.uk",
         "SMTP_HOST": "smtp.example.test",
         "SMTP_USERNAME": "zorvian",
         "SMTP_PASSWORD": "not-a-real-secret",
@@ -33,6 +33,18 @@ def test_readiness_accepts_complete_isolated_configuration():
     report = readiness_report(valid_env())
     assert report["ready"] is True
     assert report["gate"] == 6
+
+
+def test_public_url_must_be_explicit_https_and_allowed():
+    env = valid_env()
+    del env["PUBLIC_APP_URL"]
+    assert readiness_report(env)["ready"] is False
+    env = valid_env()
+    env["PUBLIC_APP_URL"] = "http://staging.zorvian.co.uk"
+    assert readiness_report(env)["ready"] is False
+    env = valid_env()
+    env["PUBLIC_APP_URL"] = "https://other.zorvian.co.uk"
+    assert readiness_report(env)["ready"] is False
 
 
 def test_ephemeral_database_paths_are_rejected():
