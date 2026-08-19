@@ -101,7 +101,7 @@ def send_email(to,subject,text):
   with smtplib.SMTP_SSL(host,port,context=ssl.create_default_context(),timeout=15) as s: s.login(user,pwd); s.send_message(msg)
  return True
 def issue_email_verification(uid,email):
- raw=secrets.token_urlsafe(32); c=db(); c.execute("INSERT INTO email_verifications VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),uid,hash_token(raw),future(hours=24),None,now())); c.commit(); c.close(); delivered=send_email(email,"Verify your Zorvian account",f"Verify your Zorvian account:\n\n{PUBLIC_APP_URL}/?verify={raw}\n\nThis link expires in 24 hours."); return raw,delivered
+ raw=secrets.token_urlsafe(32); c=db(); c.execute("INSERT INTO email_verifications VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),uid,hash_token(raw),future(hours=24),None,now())); c.commit(); c.close(); delivered=send_email(email,"Verify your Zorvian account",f"Verify your Zorvian account:\n\n{PUBLIC_APP_URL}/auth/verify-email-link?token={raw}\n\nThis link expires in 24 hours."); return raw,delivered
 def issue_session(user,request):
  raw=secrets.token_urlsafe(48); ip,ua=request_fingerprint(request); c=db(); c.execute("INSERT INTO secure_sessions VALUES (?,?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),hash_token(raw),user["id"],user["tenant_id"],now(),future(hours=SESSION_HOURS),now(),ip,ua,None)); c.commit(); c.close(); return raw
 def current_user(request:Request,authorization:Optional[str]=Header(None)):
@@ -161,6 +161,11 @@ def verify_email(d:VerifyEmailIn,request:Request):
  c=db(); r=c.execute("SELECT * FROM email_verifications WHERE token_hash=? AND used_at IS NULL AND expires_at>?",(hash_token(d.token),now())).fetchone()
  if not r: c.close(); raise HTTPException(400,"Verification link is invalid or expired")
  u=c.execute("SELECT * FROM users WHERE id=?",(r["user_id"],)).fetchone(); c.execute("UPDATE users SET email_verified=1 WHERE id=?",(r["user_id"],)); c.execute("UPDATE email_verifications SET used_at=? WHERE id=?",(now(),r["id"])); c.commit(); c.close(); security_event("email_verified","info",u["tenant_id"],u["id"],"email verified",request); return {"status":"verified"}
+@app.get("/auth/verify-email-link")
+def verify_email_link(token:str,request:Request):
+ c=db(); r=c.execute("SELECT * FROM email_verifications WHERE token_hash=? AND used_at IS NULL AND expires_at>?",(hash_token(token),now())).fetchone()
+ if not r: c.close(); raise HTTPException(400,"Verification link is invalid or expired")
+ u=c.execute("SELECT * FROM users WHERE id=?",(r["user_id"],)).fetchone(); c.execute("UPDATE users SET email_verified=1 WHERE id=?",(r["user_id"],)); c.execute("UPDATE email_verifications SET used_at=? WHERE id=?",(now(),r["id"])); c.commit(); c.close(); security_event("email_verified","info",u["tenant_id"],u["id"],"email verified by staging link",request); return {"status":"verified","message":"Your Zorvian staging account is verified. You can now sign in."}
 @app.post("/auth/login")
 def login(d:LoginIn,request:Request):
  email=norm_email(d.email); ip,_=request_fingerprint(request); rate_limit("login:"+str(ip),30,300); rate_limit("login-email:"+privacy_hash(email),15,300); c=db(); r=c.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
