@@ -1,0 +1,32 @@
+name: Zorvian Gate 4 Functional Beta Check
+
+on:
+  push:
+    branches: [main, gate4-functional-beta]
+    paths:
+      - 'GATE4_FUNCTIONAL_BETA.md'
+      - 'beta/**'
+      - 'tests/test_gate4_functional_beta.py'
+      - '.github/workflows/gate4-functional-beta.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'GATE4_FUNCTIONAL_BETA.md'
+      - 'beta/**'
+      - 'tests/test_gate4_functional_beta.py'
+      - '.github/workflows/gate4-functional-beta.yml'
+
+jobs:
+  gate4-functional-beta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Gate 4 functional beta acceptance tests
+        run: python -m pytest -q tests/test_gate4_functional_beta.py
