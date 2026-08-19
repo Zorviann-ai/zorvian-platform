@@ -21,7 +21,7 @@ _ALL_CAPABILITIES = frozenset({"communications", "automotive", "fresh-produce", 
 
 def _registry():
     profiles = [
-        ProviderProfile("zorvian-local-beta", _ALL_CAPABILITIES, True, True, False, 40, 5, True),
+        ProviderProfile("zorvian-local-beta", _ALL_CAPABILITIES, True, True, True, 40, 5, True),
     ]
     if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
         profiles.insert(0, ProviderProfile("zorvian-remote", _ALL_CAPABILITIES, True, True, True, 10, 20, True))
