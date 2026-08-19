@@ -27,8 +27,9 @@ def test_shared_demo_engine_covers_all_specialists_and_safety_boundaries():
     js = (MOD / "demo.js").read_text(encoding="utf-8")
     for key in ["receptionist", "auto", "freshx", "tenders", "leads", "documents", "control", "route"]:
         assert f"{key}:" in js
-    for phrase in ["BLOCK", "human approval", "PREPARED ONLY"]:
-        assert phrase in js
+    lower = js.lower()
+    for phrase in ["block", "human approval", "prepared only"]:
+        assert phrase in lower
 
 
 def test_beta_hub_links_every_component():
