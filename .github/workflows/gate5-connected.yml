@@ -34,8 +34,8 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-      - name: Install test dependencies
-        run: pip install -r requirements-dev.txt
+      - name: Install runtime and test dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Compile connected intelligence layer
         run: python -m py_compile app_gate5.py intelligence/connected.py intelligence/providers.py intelligence/guard.py intelligence/executor.py
       - name: Gate 5 connected intelligence tests
