@@ -3,9 +3,9 @@
 Extends the existing Zorvian FastAPI app without changing the proven Gate 2-4 core.
 """
 import os
-from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import app, audit, current_user, rate_limit, require, request_fingerprint
@@ -101,3 +101,9 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
             "needs_review": result.provenance.needs_review,
         },
     }
+
+
+# Served from the same origin as Core so beta clients can authenticate without
+# weakening CORS or exposing provider credentials in downloadable HTML files.
+if os.path.isdir("beta"):
+    app.mount("/beta", StaticFiles(directory="beta", html=True), name="beta")
