@@ -2,6 +2,7 @@
 from dataclasses import asdict, dataclass
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,18 @@ def production_secrets_safe(env=None):
     return len(pepper) >= 32 and pepper != "change-me-in-railway" and len(adapter_key) >= 16
 
 
+def public_urls_safe(env=None):
+    env = os.environ if env is None else env
+    origin = str(env.get("ALLOWED_ORIGINS", "")).strip()
+    public_url = str(env.get("PUBLIC_APP_URL", "")).strip()
+    if not origin or not public_url:
+        return False
+    parsed = urlparse(public_url)
+    return parsed.scheme == "https" and bool(parsed.netloc) and public_url.rstrip("/") in {
+        value.strip().rstrip("/") for value in origin.split(",") if value.strip()
+    }
+
+
 def readiness_report(env=None):
     env = os.environ if env is None else env
     checks = [
@@ -54,7 +67,7 @@ def readiness_report(env=None):
         ReadinessCheck("email_delivery", all(_set(x, env) for x in _REQUIRED_SMTP), "Verified SMTP configuration required."),
         ReadinessCheck("guardian_secrets", production_secrets_safe(env), "Guardian pepper and server-side AI adapter key required."),
         ReadinessCheck("ai_adapter", _set("ZORVIAN_AI_ADAPTER_URL", env), "Approved server-side provider adapter required."),
-        ReadinessCheck("public_origin", _set("ALLOWED_ORIGINS", env), "Explicit origin allowlist required."),
+        ReadinessCheck("public_origin", public_urls_safe(env), "Explicit matching HTTPS origin and public app URL required."),
     ]
     return {
         "gate": 6,
