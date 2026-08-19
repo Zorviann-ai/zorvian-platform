@@ -1,0 +1,38 @@
+name: Zorvian Gate 2 Python Security Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'requirements.txt'
+      - 'tests/**'
+      - '.github/workflows/gate2-python.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'requirements.txt'
+      - 'tests/**'
+
+jobs:
+  gate2-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile backend
+        run: python -m py_compile app.py
+      - name: Gate 2 account and isolation tests
+        env:
+          ZORVIAN_ENV: test
+          DEV_EXPOSE_TOKENS: '1'
+          GUARDIAN_HASH_PEPPER: gate2-ci-pepper-not-production
+          ALLOWED_ORIGINS: https://zorvian.co.uk,https://www.zorvian.co.uk
+        run: pytest -q tests/test_gate2.py
