@@ -41,6 +41,15 @@ class IntelligenceRunIn(BaseModel):
     consequential_action: bool = False
 
 
+@app.middleware("http")
+async def gate5_beta_csp(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/beta"):
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'"
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.get("/intelligence/capabilities")
 def intelligence_capabilities(u=Depends(current_user)):
     return {
