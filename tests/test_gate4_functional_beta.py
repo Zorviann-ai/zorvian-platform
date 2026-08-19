@@ -37,7 +37,10 @@ def test_beta_hub_links_every_component():
         assert f"modules/{name}" in html
 
 
-def test_no_remote_execution_or_secret_material_in_component_assets():
+def test_connected_component_assets_keep_secrets_server_side_and_same_origin():
     text = "\n".join(p.read_text(encoding="utf-8") for p in MOD.glob("*") if p.is_file())
-    forbidden = ["fetch(", "XMLHttpRequest", "Authorization: Bearer", "GUARDIAN_HASH_PEPPER=", "SMTP_PASSWORD=", "sk-"]
+    forbidden = ["GUARDIAN_HASH_PEPPER=", "SMTP_PASSWORD=", "ZORVIAN_AI_ADAPTER_KEY", "sk-", "https://api.", "http://"]
     assert all(item not in text for item in forbidden)
+    js = (MOD / "demo.js").read_text(encoding="utf-8")
+    assert "fetch('/intelligence/run'" in js
+    assert "sessionStorage" in js
