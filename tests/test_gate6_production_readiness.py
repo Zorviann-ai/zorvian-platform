@@ -108,6 +108,32 @@ def test_first_party_adapter_rejects_bad_key_and_blocks_injection(monkeypatch):
     assert client.post("/internal/ai-adapter", json=payload, headers=headers).status_code == 403
 
 
+def test_staging_email_link_verifies_once(monkeypatch):
+    monkeypatch.setenv("ZORVIAN_ENV", "test")
+    from fastapi.testclient import TestClient
+    from app_gate6 import app
+    from app import db, hash_password, issue_email_verification, now
+
+    tenant_id = "tenant-" + uuid.uuid4().hex
+    user_id = "user-" + uuid.uuid4().hex
+    email = "gate6-" + uuid.uuid4().hex[:10] + "@example.test"
+    c = db()
+    c.execute("INSERT INTO tenants(id,name,created_at) VALUES (?,?,?)", (tenant_id, "Gate 6 Link Test", now()))
+    c.execute(
+        "INSERT INTO users(id,tenant_id,email,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
+        (user_id, tenant_id, email, hash_password("StrongGate6Link!Password"), "owner", now()),
+    )
+    c.commit()
+    c.close()
+    token, delivered = issue_email_verification(user_id, email)
+    assert delivered is False
+    client = TestClient(app)
+    first = client.get("/auth/verify-email-link", params={"token": token})
+    assert first.status_code == 200
+    assert first.json()["status"] == "verified"
+    assert client.get("/auth/verify-email-link", params={"token": token}).status_code == 400
+
+
 def test_persistent_sqlite_data_survives_new_connection():
     import sqlite3
     db_path = Path(tempfile.gettempdir()) / ("zorvian-gate6-" + uuid.uuid4().hex + ".db")
