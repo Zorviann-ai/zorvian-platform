@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
-import sqlite3, uuid, hashlib, secrets, datetime, os, re, smtplib, ssl, base64, hmac, struct, time
+import sqlite3, uuid, hashlib, secrets, datetime, os, re, smtplib, ssl, base64, hmac, struct, time, json, urllib.request, urllib.error
 from email.message import EmailMessage
 
 APP_VERSION="0.9.0"
@@ -91,15 +91,19 @@ def rate_limit(bucket,limit=10,window_seconds=300):
  if (n-start).total_seconds()>=window_seconds: c.execute("UPDATE rate_limits SET count=1,window_start=? WHERE bucket=?",(now(),bucket)); c.commit(); c.close(); return
  if r["count"]>=limit: c.close(); raise HTTPException(429,"Too many attempts. Try again later.")
  c.execute("UPDATE rate_limits SET count=count+1 WHERE bucket=?",(bucket,)); c.commit(); c.close()
-def smtp_ready(): return all(os.getenv(x) for x in ["SMTP_HOST","SMTP_USERNAME","SMTP_PASSWORD","SMTP_FROM"])
+def smtp_ready(): return all(os.getenv(x) for x in ["SMTP_PASSWORD","SMTP_FROM"])
 def send_email(to,subject,text):
- if not smtp_ready(): return False
- msg=EmailMessage(); msg["From"]=os.getenv("SMTP_FROM"); msg["To"]=to; msg["Subject"]=subject; msg.set_content(text); host=os.getenv("SMTP_HOST"); port=int(os.getenv("SMTP_PORT","465")); user=os.getenv("SMTP_USERNAME"); pwd=os.getenv("SMTP_PASSWORD")
- if os.getenv("SMTP_TLS_MODE","ssl").lower()=="starttls":
-  with smtplib.SMTP(host,port,timeout=15) as s: s.starttls(context=ssl.create_default_context()); s.login(user,pwd); s.send_message(msg)
- else:
-  with smtplib.SMTP_SSL(host,port,context=ssl.create_default_context(),timeout=15) as s: s.login(user,pwd); s.send_message(msg)
- return True
+ api_key=os.getenv("RESEND_API_KEY") or os.getenv("SMTP_PASSWORD"); sender=os.getenv("SMTP_FROM")
+ if not api_key or not sender: return False
+ payload=json.dumps({"from":sender,"to":[to],"subject":subject,"text":text}).encode("utf-8")
+ req=urllib.request.Request("https://api.resend.com/emails",data=payload,headers={"Authorization":f"Bearer {api_key}","Content-Type":"application/json","User-Agent":"Zorvian-Gate6/0.9.0"},method="POST")
+ try:
+  with urllib.request.urlopen(req,timeout=15) as resp:
+   return getattr(resp,"status",200) in (200,201)
+ except urllib.error.HTTPError as exc:
+  detail=exc.read().decode("utf-8","replace")[:500]; raise RuntimeError(f"Resend HTTP {exc.code}: {detail}") from exc
+ except urllib.error.URLError as exc:
+  raise RuntimeError(f"Resend HTTPS connection failed: {exc.reason}") from exc
 def issue_email_verification(uid,email):
  raw=secrets.token_urlsafe(32); c=db(); c.execute("INSERT INTO email_verifications VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),uid,hash_token(raw),future(hours=24),None,now())); c.commit(); c.close(); delivered=send_email(email,"Verify your Zorvian account",f"Verify your Zorvian account:\n\n{PUBLIC_APP_URL}/auth/verify-email-link?token={raw}\n\nThis link expires in 24 hours."); return raw,delivered
 def issue_session(user,request):
