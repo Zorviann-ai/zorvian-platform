@@ -1,0 +1,52 @@
+name: Zorvian Gate 6 Production Readiness Check
+
+on:
+  push:
+    branches: [agent/gate6-production-readiness]
+    paths:
+      - 'GATE6_PRODUCTION_READINESS.md'
+      - 'app_gate6.py'
+      - 'deployment/**'
+      - 'Dockerfile'
+      - 'tests/test_gate6_*.py'
+      - '.github/workflows/gate6-readiness.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'GATE6_PRODUCTION_READINESS.md'
+      - 'app_gate6.py'
+      - 'deployment/**'
+      - 'Dockerfile'
+      - 'tests/test_gate6_*.py'
+      - '.github/workflows/gate6-readiness.yml'
+
+jobs:
+  gate6-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install runtime and test dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Compile Gate 6 readiness layer
+        run: python -m py_compile app_gate6.py deployment/readiness.py
+      - name: Gate 6 production readiness tests
+        run: python -m pytest -q tests/test_gate6_*.py
+      - name: Gate 5 connected regression
+        run: python -m pytest -q tests/test_gate5_*.py
+      - name: Gate 4 functional regression
+        run: python -m pytest -q tests/test_gate4_functional_beta.py
+      - name: Gate 3 intelligence regression
+        run: python -m pytest -q tests/test_gate3_*.py
+      - name: Gate 2 security regression
+        env:
+          ZORVIAN_ENV: test
+          DEV_EXPOSE_TOKENS: '1'
+          GUARDIAN_HASH_PEPPER: gate2-ci-pepper-not-production
+          ALLOWED_ORIGINS: https://zorvian.co.uk,https://www.zorvian.co.uk
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_gate2.py

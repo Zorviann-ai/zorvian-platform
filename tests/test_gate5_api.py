@@ -46,10 +46,14 @@ def test_gate5_api_source_requires_authenticated_user_and_same_origin_beta():
     assert 'StaticFiles(directory="beta", html=True)' in src
 
 
-def test_docker_runs_gate5_and_keeps_secrets_out_of_browser_bundle():
+def test_docker_preserves_gate5_and_keeps_secrets_out_of_browser_bundle():
     docker = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     js = (ROOT / "beta" / "modules" / "demo.js").read_text(encoding="utf-8")
-    assert "uvicorn app_gate5:app" in docker
+    assert "COPY app.py app_gate5.py" in docker
+    assert "uvicorn app_gate5:app" in docker or "uvicorn app_gate6:app" in docker
+    if "uvicorn app_gate6:app" in docker:
+        successor = (ROOT / "app_gate6.py").read_text(encoding="utf-8")
+        assert "from app_gate5 import app" in successor
     assert "COPY beta ./beta" in docker
     assert "ZORVIAN_AI_ADAPTER_KEY" not in js
     assert "fetch('/intelligence/run'" in js

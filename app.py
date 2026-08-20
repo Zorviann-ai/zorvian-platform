@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
-import sqlite3, uuid, hashlib, secrets, datetime, os, re, smtplib, ssl, base64, hmac, struct, time
+import sqlite3, uuid, hashlib, secrets, datetime, os, re, smtplib, ssl, base64, hmac, struct, time, json, urllib.request, urllib.error
 from email.message import EmailMessage
 
 APP_VERSION="0.9.0"
@@ -12,6 +12,7 @@ ENV=os.getenv("ZORVIAN_ENV","production").lower()
 DB=os.getenv("SQLITE_PATH",os.path.join(os.path.dirname(__file__),"zorvian.db"))
 SESSION_HOURS=int(os.getenv("SESSION_HOURS","12")); LOCKOUT_MINUTES=int(os.getenv("LOCKOUT_MINUTES","15")); MAX_FAILED_LOGINS=int(os.getenv("MAX_FAILED_LOGINS","5"))
 ALLOWED_ORIGINS=[x.strip() for x in os.getenv("ALLOWED_ORIGINS","https://zorvian.co.uk,https://www.zorvian.co.uk").split(",") if x.strip()]
+PUBLIC_APP_URL=os.getenv("PUBLIC_APP_URL","https://zorvian.co.uk").rstrip("/")
 ph=PasswordHasher(time_cost=2,memory_cost=19456,parallelism=1)
 app=FastAPI(title="Zorvian Core API",version=APP_VERSION,docs_url=None if ENV=="production" else "/docs",redoc_url=None if ENV=="production" else "/redoc")
 app.add_middleware(CORSMiddleware,allow_origins=ALLOWED_ORIGINS,allow_credentials=False,allow_methods=["GET","POST","PATCH","DELETE","OPTIONS"],allow_headers=["Authorization","Content-Type","X-Request-ID"])
@@ -90,17 +91,21 @@ def rate_limit(bucket,limit=10,window_seconds=300):
  if (n-start).total_seconds()>=window_seconds: c.execute("UPDATE rate_limits SET count=1,window_start=? WHERE bucket=?",(now(),bucket)); c.commit(); c.close(); return
  if r["count"]>=limit: c.close(); raise HTTPException(429,"Too many attempts. Try again later.")
  c.execute("UPDATE rate_limits SET count=count+1 WHERE bucket=?",(bucket,)); c.commit(); c.close()
-def smtp_ready(): return all(os.getenv(x) for x in ["SMTP_HOST","SMTP_USERNAME","SMTP_PASSWORD","SMTP_FROM"])
+def smtp_ready(): return all(os.getenv(x) for x in ["SMTP_PASSWORD","SMTP_FROM"])
 def send_email(to,subject,text):
- if not smtp_ready(): return False
- msg=EmailMessage(); msg["From"]=os.getenv("SMTP_FROM"); msg["To"]=to; msg["Subject"]=subject; msg.set_content(text); host=os.getenv("SMTP_HOST"); port=int(os.getenv("SMTP_PORT","465")); user=os.getenv("SMTP_USERNAME"); pwd=os.getenv("SMTP_PASSWORD")
- if os.getenv("SMTP_TLS_MODE","ssl").lower()=="starttls":
-  with smtplib.SMTP(host,port,timeout=15) as s: s.starttls(context=ssl.create_default_context()); s.login(user,pwd); s.send_message(msg)
- else:
-  with smtplib.SMTP_SSL(host,port,context=ssl.create_default_context(),timeout=15) as s: s.login(user,pwd); s.send_message(msg)
- return True
+ api_key=os.getenv("RESEND_API_KEY") or os.getenv("SMTP_PASSWORD"); sender=os.getenv("SMTP_FROM")
+ if not api_key or not sender: return False
+ payload=json.dumps({"from":sender,"to":[to],"subject":subject,"text":text}).encode("utf-8")
+ req=urllib.request.Request("https://api.resend.com/emails",data=payload,headers={"Authorization":f"Bearer {api_key}","Content-Type":"application/json","User-Agent":"Zorvian-Gate6/0.9.0"},method="POST")
+ try:
+  with urllib.request.urlopen(req,timeout=15) as resp:
+   return getattr(resp,"status",200) in (200,201)
+ except urllib.error.HTTPError as exc:
+  detail=exc.read().decode("utf-8","replace")[:500]; raise RuntimeError(f"Resend HTTP {exc.code}: {detail}") from exc
+ except urllib.error.URLError as exc:
+  raise RuntimeError(f"Resend HTTPS connection failed: {exc.reason}") from exc
 def issue_email_verification(uid,email):
- raw=secrets.token_urlsafe(32); c=db(); c.execute("INSERT INTO email_verifications VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),uid,hash_token(raw),future(hours=24),None,now())); c.commit(); c.close(); delivered=send_email(email,"Verify your Zorvian account",f"Verify your Zorvian account:\n\nhttps://zorvian.co.uk/?verify={raw}\n\nThis link expires in 24 hours."); return raw,delivered
+ raw=secrets.token_urlsafe(32); c=db(); c.execute("INSERT INTO email_verifications VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),uid,hash_token(raw),future(hours=24),None,now())); c.commit(); c.close(); delivered=send_email(email,"Verify your Zorvian account",f"Verify your Zorvian account:\n\n{PUBLIC_APP_URL}/auth/verify-email-link?token={raw}\n\nThis link expires in 24 hours."); return raw,delivered
 def issue_session(user,request):
  raw=secrets.token_urlsafe(48); ip,ua=request_fingerprint(request); c=db(); c.execute("INSERT INTO secure_sessions VALUES (?,?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),hash_token(raw),user["id"],user["tenant_id"],now(),future(hours=SESSION_HOURS),now(),ip,ua,None)); c.commit(); c.close(); return raw
 def current_user(request:Request,authorization:Optional[str]=Header(None)):
@@ -160,6 +165,11 @@ def verify_email(d:VerifyEmailIn,request:Request):
  c=db(); r=c.execute("SELECT * FROM email_verifications WHERE token_hash=? AND used_at IS NULL AND expires_at>?",(hash_token(d.token),now())).fetchone()
  if not r: c.close(); raise HTTPException(400,"Verification link is invalid or expired")
  u=c.execute("SELECT * FROM users WHERE id=?",(r["user_id"],)).fetchone(); c.execute("UPDATE users SET email_verified=1 WHERE id=?",(r["user_id"],)); c.execute("UPDATE email_verifications SET used_at=? WHERE id=?",(now(),r["id"])); c.commit(); c.close(); security_event("email_verified","info",u["tenant_id"],u["id"],"email verified",request); return {"status":"verified"}
+@app.get("/auth/verify-email-link")
+def verify_email_link(token:str,request:Request):
+ c=db(); r=c.execute("SELECT * FROM email_verifications WHERE token_hash=? AND used_at IS NULL AND expires_at>?",(hash_token(token),now())).fetchone()
+ if not r: c.close(); raise HTTPException(400,"Verification link is invalid or expired")
+ u=c.execute("SELECT * FROM users WHERE id=?",(r["user_id"],)).fetchone(); c.execute("UPDATE users SET email_verified=1 WHERE id=?",(r["user_id"],)); c.execute("UPDATE email_verifications SET used_at=? WHERE id=?",(now(),r["id"])); c.commit(); c.close(); security_event("email_verified","info",u["tenant_id"],u["id"],"email verified by staging link",request); return {"status":"verified","message":"Your Zorvian staging account is verified. You can now sign in."}
 @app.post("/auth/login")
 def login(d:LoginIn,request:Request):
  email=norm_email(d.email); ip,_=request_fingerprint(request); rate_limit("login:"+str(ip),30,300); rate_limit("login-email:"+privacy_hash(email),15,300); c=db(); r=c.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
@@ -188,7 +198,7 @@ def mfa_enable(d:MFAEnableIn,request:Request,u=Depends(current_user)):
 def forgot(d:ForgotIn,request:Request):
  email=norm_email(d.email); rate_limit("forgot:"+privacy_hash(email),5,3600); c=db(); u=c.execute("SELECT * FROM users WHERE email=? AND status='active'",(email,)).fetchone()
  if u:
-  raw=secrets.token_urlsafe(32); c.execute("INSERT INTO password_resets VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),u["id"],hash_token(raw),future(hours=1),None,now())); c.commit(); send_email(email,"Reset your Zorvian password",f"Reset your password:\n\nhttps://zorvian.co.uk/?reset={raw}\n\nThis link expires in one hour.")
+  raw=secrets.token_urlsafe(32); c.execute("INSERT INTO password_resets VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),u["id"],hash_token(raw),future(hours=1),None,now())); c.commit(); send_email(email,"Reset your Zorvian password",f"Reset your password:\n\n{PUBLIC_APP_URL}/?reset={raw}\n\nThis link expires in one hour.")
  c.close(); return {"status":"If the account exists, reset instructions have been sent."}
 @app.post("/auth/reset-password")
 def reset_password(d:ResetIn,request:Request):
@@ -199,7 +209,7 @@ def reset_password(d:ResetIn,request:Request):
 def invite(d:InviteIn,u=Depends(current_user)):
  require(u,"invite"); email=norm_email(d.email); role=d.role.lower()
  if role not in {"admin","principal","staff","viewer"}: raise HTTPException(422,"Invalid role")
- raw=secrets.token_urlsafe(32); c=db(); c.execute("INSERT INTO invitations VALUES (?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),u["tenant_id"],email,role,hash_token(raw),future(days=7),None,u["id"],now())); c.commit(); c.close(); delivered=send_email(email,"You've been invited to Zorvian",f"Accept your invitation:\n\nhttps://zorvian.co.uk/?invite={raw}\n\nThis invitation expires in 7 days."); audit(u,"user_invited",f"{email} · {role}"); return {"status":"invited","email_delivery":"sent" if delivered else "not_configured"}
+ raw=secrets.token_urlsafe(32); c=db(); c.execute("INSERT INTO invitations VALUES (?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),u["tenant_id"],email,role,hash_token(raw),future(days=7),None,u["id"],now())); c.commit(); c.close(); delivered=send_email(email,"You've been invited to Zorvian",f"Accept your invitation:\n\n{PUBLIC_APP_URL}/?invite={raw}\n\nThis invitation expires in 7 days."); audit(u,"user_invited",f"{email} · {role}"); return {"status":"invited","email_delivery":"sent" if delivered else "not_configured"}
 @app.post("/auth/invitations/accept")
 def accept_invite(d:AcceptInviteIn,request:Request):
  validate_password(d.password); c=db(); inv=c.execute("SELECT * FROM invitations WHERE token_hash=? AND accepted_at IS NULL AND expires_at>?",(hash_token(d.token),now())).fetchone()
