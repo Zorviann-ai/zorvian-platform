@@ -1,8 +1,8 @@
 """Gate 7 controlled-pilot security additions.
 
-Adds email-verified MFA recovery and a one-time MFA enrollment transaction so
-that the QR code and verification code are always checked against the exact
-same secret. Normal MFA login remains enforced by app.py.
+Adds email-verified MFA recovery, a one-time MFA enrollment transaction, and a
+safe verification-email resend path for pilot accounts. Normal MFA login
+remains enforced by app.py.
 """
 import base64
 import hmac
@@ -21,6 +21,7 @@ from app import (
     db,
     future,
     hash_token,
+    issue_email_verification,
     norm_email,
     now,
     privacy_hash,
@@ -46,6 +47,10 @@ class MFAEnableV2In(BaseModel):
 class MFAEnableV3In(BaseModel):
     enrollment_id: str
     code: str
+
+
+class ResendVerificationIn(BaseModel):
+    email: str
 
 
 def _ensure_gate7_tables():
@@ -79,6 +84,71 @@ def _ensure_gate7_tables():
 
 
 _ensure_gate7_tables()
+
+
+@app.post("/auth/resend-verification")
+def resend_verification(d: ResendVerificationIn, request: Request):
+    """Issue a fresh one-time verification email for an unverified account.
+
+    The response does not reveal whether an email address is registered. A
+    verified account is left untouched. Failed provider delivery is surfaced as
+    503 so the pilot UI does not falsely claim that an email was sent.
+    """
+    email = norm_email(d.email)
+    rate_limit("verify-resend:" + privacy_hash(email), 4, 3600)
+    c = db()
+    u = c.execute(
+        "SELECT * FROM users WHERE email=? AND status='active'",
+        (email,),
+    ).fetchone()
+    if not u:
+        c.close()
+        return {"status": "If the account exists and is unverified, a fresh verification email has been sent."}
+    if int(u["email_verified"] or 0) == 1:
+        c.close()
+        return {"status": "already_verified", "message": "This account is already verified. You can sign in."}
+
+    # Invalidate earlier unused links so only the newest verification email is active.
+    c.execute(
+        "UPDATE email_verifications SET used_at=? WHERE user_id=? AND used_at IS NULL",
+        (now(), u["id"]),
+    )
+    c.commit()
+    c.close()
+
+    try:
+        _raw, delivered = issue_email_verification(u["id"], email)
+    except Exception as exc:
+        security_event(
+            "verification_email_failed",
+            "error",
+            u["tenant_id"],
+            u["id"],
+            f"provider_error={type(exc).__name__}",
+            request,
+        )
+        raise HTTPException(503, "Verification email could not be sent right now. Try again shortly.") from exc
+
+    if not delivered:
+        security_event(
+            "verification_email_failed",
+            "error",
+            u["tenant_id"],
+            u["id"],
+            "email provider not configured",
+            request,
+        )
+        raise HTTPException(503, "Verification email service is not configured.")
+
+    security_event(
+        "verification_email_resent",
+        "info",
+        u["tenant_id"],
+        u["id"],
+        "fresh verification link issued",
+        request,
+    )
+    return {"status": "verification_sent", "message": "A fresh verification email has been sent. Check Inbox and Spam/Junk."}
 
 
 @app.post("/auth/mfa/recovery-request")
