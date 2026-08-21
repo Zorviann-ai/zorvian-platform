@@ -1,16 +1,21 @@
 """Gate 7 controlled-pilot security additions.
 
-Adds an email-verified MFA recovery path without weakening normal MFA login.
+Adds an email-verified MFA recovery path and a hardened MFA enrollment verifier
+without weakening normal MFA login.
 """
+import hmac
+import re
 import secrets
+import time
 import uuid
 
-from fastapi import Request
+from fastapi import Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app_gate6 import app
 from app import (
     PUBLIC_APP_URL,
+    current_user,
     db,
     future,
     hash_token,
@@ -20,6 +25,7 @@ from app import (
     rate_limit,
     security_event,
     send_email,
+    totp_code,
 )
 
 
@@ -29,6 +35,10 @@ class MFARecoveryRequestIn(BaseModel):
 
 class MFARecoverIn(BaseModel):
     token: str
+
+
+class MFAEnableV2In(BaseModel):
+    code: str
 
 
 def _ensure_mfa_recovery_table():
@@ -106,13 +116,11 @@ def mfa_recover(d: MFARecoverIn, request: Request):
     ).fetchone()
     if not r:
         c.close()
-        from fastapi import HTTPException
         raise HTTPException(400, "MFA recovery link is invalid or expired")
 
     u = c.execute("SELECT * FROM users WHERE id=?", (r["user_id"],)).fetchone()
     if not u:
         c.close()
-        from fastapi import HTTPException
         raise HTTPException(400, "MFA recovery link is invalid or expired")
 
     c.execute(
@@ -139,3 +147,55 @@ def mfa_recover(d: MFARecoverIn, request: Request):
         request,
     )
     return {"status": "mfa_recovered", "message": "Guardian MFA has been reset. Sign in and set up MFA again."}
+
+
+@app.post("/auth/mfa/enable-v2")
+def mfa_enable_v2(d: MFAEnableV2In, request: Request, u=Depends(current_user)):
+    """Enrollment-only TOTP verifier with controlled clock-skew tolerance.
+
+    Normal login continues to use the stricter verifier in app.py. This wider
+    enrollment window prevents a phone/server clock mismatch from blocking setup.
+    """
+    code = str(d.code).strip()
+    if not re.fullmatch(r"\d{6}", code):
+        raise HTTPException(422, "Enter a 6-digit authenticator code")
+
+    rate_limit("mfa-enable:" + u["id"], 10, 600)
+    c = db()
+    r = c.execute("SELECT mfa_secret FROM users WHERE id=?", (u["id"],)).fetchone()
+    if not r or not r["mfa_secret"]:
+        c.close()
+        raise HTTPException(409, "Start MFA setup again to create a fresh authenticator secret")
+
+    secret = r["mfa_secret"]
+    ts = int(time.time())
+    matched_offset = None
+    for step in range(-5, 6):
+        if hmac.compare_digest(totp_code(secret, ts + step * 30), code):
+            matched_offset = step
+            break
+
+    if matched_offset is None:
+        c.close()
+        security_event(
+            "mfa_enrollment_failed",
+            "warning",
+            u["tenant_id"],
+            u["id"],
+            "authenticator code did not match enrollment secret",
+            request,
+        )
+        raise HTTPException(400, "That code does not match this QR setup. Delete any old Zorvian entry in the authenticator, scan the current QR once, then use the code shown for that new Zorvian entry.")
+
+    c.execute("UPDATE users SET mfa_enabled=1 WHERE id=?", (u["id"],))
+    c.commit()
+    c.close()
+    security_event(
+        "mfa_enabled",
+        "info",
+        u["tenant_id"],
+        u["id"],
+        f"TOTP enabled via Gate 7 enrollment verifier; clock_offset_steps={matched_offset}",
+        request,
+    )
+    return {"status": "mfa_enabled", "clock_offset_seconds": matched_offset * 30}
