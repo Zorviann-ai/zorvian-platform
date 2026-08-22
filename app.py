@@ -52,6 +52,7 @@ def init_db():
  """)
  for d in ["display_name TEXT","email_verified INTEGER NOT NULL DEFAULT 0","mfa_secret TEXT","mfa_enabled INTEGER NOT NULL DEFAULT 0","status TEXT NOT NULL DEFAULT 'active'","failed_attempts INTEGER NOT NULL DEFAULT 0","locked_until TEXT","last_login_at TEXT","password_changed_at TEXT"]: add_column(c,"users",d)
  for d in ["slug TEXT","status TEXT NOT NULL DEFAULT 'active'","plan TEXT NOT NULL DEFAULT 'gate2'","owner_user_id TEXT"]: add_column(c,"tenants",d)
+ for d in ["duration TEXT NOT NULL DEFAULT '60 minutes'","timezone TEXT NOT NULL DEFAULT 'Europe/London'"]: add_column(c,"bookings",d)
  if ENV=="production": cur.execute("UPDATE users SET status='disabled' WHERE email='admin@zorvian.local'")
  c.commit(); c.close()
 init_db()
@@ -132,7 +133,7 @@ class InviteIn(BaseModel): email:str; role:str="staff"
 class AcceptInviteIn(BaseModel): token:str; name:str; password:str
 class ContactIn(BaseModel): name:str; contact:str; need:str=""; source:str="manual"
 class ReceptionIn(BaseModel): name:str; contact:str; text:str; language:str="English"
-class BookingIn(BaseModel): contact_id:str; type:str="Appointment"; date:str; time:str; reminder:str="24 hours before"
+class BookingIn(BaseModel): contact_id:str; type:str="Appointment"; date:str; time:str; reminder:str="24 hours before"; duration:str="60 minutes"; timezone:str="Europe/London"
 class TaskIn(BaseModel): title:str; owner:str="Team"; due:str=""
 class DocumentIn(BaseModel): type:str; recipient:str; facts:str
 class CampaignIn(BaseModel): channel:str; goal:str; audience:str=""; message:str; mode:str="Approval required"
@@ -248,7 +249,7 @@ def add_booking(d:BookingIn,u=Depends(current_user)):
  if not contact: c.close(); raise HTTPException(404,"Contact not found")
  dup=c.execute("SELECT id FROM bookings WHERE tenant_id=? AND contact_id=? AND date=? AND time=? AND status!='Cancelled'",(u["tenant_id"],d.contact_id,d.date,d.time)).fetchone()
  if dup: c.close(); raise HTTPException(409,"Duplicate booking")
- bid=str(uuid.uuid4()); c.execute("INSERT INTO bookings VALUES (?,?,?,?,?,?,?,?,?)",(bid,u["tenant_id"],d.contact_id,d.type,d.date,d.time,d.reminder,"Confirmed",now())); c.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",(str(uuid.uuid4()),u["tenant_id"],f"Send booking confirmation to {contact['name']}","Automation",d.date,"Open",now())); c.commit(); c.close(); audit(u,"booking_created",f"{contact['name']} · {d.date} {d.time}"); return {"id":bid,"status":"Confirmed","notification":"queued_internal"}
+ bid=str(uuid.uuid4()); c.execute("INSERT INTO bookings(id,tenant_id,contact_id,type,date,time,reminder,status,created_at,duration,timezone) VALUES (?,?,?,?,?,?,?,?,?,?,?)",(bid,u["tenant_id"],d.contact_id,d.type,d.date,d.time,d.reminder,"Confirmed",now(),d.duration,d.timezone)); c.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",(str(uuid.uuid4()),u["tenant_id"],f"Send booking confirmation to {contact['name']}","Automation",d.date,"Open",now())); c.commit(); c.close(); audit(u,"booking_created",f"{contact['name']} · {d.date} {d.time} · {d.duration} · {d.timezone}"); return {"id":bid,"status":"Confirmed","duration":d.duration,"timezone":d.timezone,"notification":"queued_internal"}
 @app.get("/tasks")
 def tasks(u=Depends(current_user)):
  c=db(); rows=c.execute("SELECT * FROM tasks WHERE tenant_id=? ORDER BY created_at DESC",(u["tenant_id"],)).fetchall(); c.close(); return [dict(x) for x in rows]
