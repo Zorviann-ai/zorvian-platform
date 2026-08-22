@@ -42,6 +42,41 @@ SPECIALIST_INSTRUCTIONS = {
 }
 
 
+FAST_MODULES = frozenset({
+    "receptionist", "executive-assistant", "calendar-bookings", "reservations",
+    "lead-intelligence", "social-ai", "marketing", "sales-quotes",
+    "customer-support", "tasks-workflow", "mailbox-communications",
+})
+
+DEEP_MODULES = frozenset({
+    "tenders", "document-proof", "legal-pathways", "finance-pathways",
+    "guardian-security", "robotics",
+})
+
+
+def _openai_profile(module):
+    if module in FAST_MODULES:
+        return (
+            os.getenv("OPENAI_FAST_MODEL", "gpt-5.6-luna").strip(),
+            "none",
+            "low",
+            2500,
+        )
+    if module in DEEP_MODULES:
+        return (
+            os.getenv("OPENAI_DEEP_MODEL", "gpt-5.6-sol").strip(),
+            "medium",
+            "medium",
+            6000,
+        )
+    return (
+        os.getenv("OPENAI_MODEL", "gpt-5.6-terra").strip(),
+        "low",
+        "medium",
+        4000,
+    )
+
+
 def _system_prompt(ctx):
     direction = SPECIALIST_INSTRUCTIONS.get(ctx.module, "Prepare safe, accurate business work from supplied facts only.")
     return (
@@ -80,13 +115,16 @@ def _remote_adapter(provider_name, prompt, ctx):
 
 def _openai(prompt, ctx):
     key = os.getenv("OPENAI_API_KEY", "").strip()
-    model = os.getenv("OPENAI_MODEL", "gpt-5").strip()
+    model, effort, verbosity, max_output_tokens = _openai_profile(ctx.module)
     if not key:
         raise RuntimeError("OpenAI is not configured")
     payload = json.dumps({
         "model": model,
         "instructions": _system_prompt(ctx),
         "input": guardian_check(prompt),
+        "reasoning": {"effort": effort},
+        "text": {"verbosity": verbosity},
+        "max_output_tokens": max_output_tokens,
         "store": False,
     }).encode("utf-8")
     req = urllib.request.Request("https://api.openai.com/v1/responses", data=payload, method="POST", headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
