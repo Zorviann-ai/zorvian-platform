@@ -102,7 +102,8 @@ def test_existing_tenant_direct_inbound_is_auto_provisioned(monkeypatch):
     assert integrations.status_code == 200
     email = next(x for x in integrations.json() if x["provider"] == "email")
     assert email["status"] == "connected"
-    inbound_address = json.loads(email["config_json"])["inbound_address"]
+    mailbox = client.get("/mailbox/status", headers=headers).json()
+    inbound_address = mailbox["inbound_address"]
     assert inbound_address == "direct-route-ltd@inbound.zorvian.test"
 
     def fake_resend(method, path, payload=None, extra_headers=None):
