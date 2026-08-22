@@ -50,7 +50,7 @@ def test_docker_preserves_gate5_and_keeps_secrets_out_of_browser_bundle():
     docker = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     js = (ROOT / "beta" / "modules" / "demo.js").read_text(encoding="utf-8")
     assert "COPY app.py app_gate5.py" in docker
-    entrypoints = [5, 6, 7, 8, 9, 10]
+    entrypoints = [5, 6, 7, 8, 9, 10, 11]
     active = next((n for n in reversed(entrypoints) if f"uvicorn app_gate{n}:app" in docker), None)
     assert active is not None
     for n in range(active, 5, -1):
