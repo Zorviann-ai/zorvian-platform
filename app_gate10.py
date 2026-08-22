@@ -67,9 +67,11 @@ def _provision_missing_mailboxes():
 
 @app.middleware("http")
 async def gate7_mailbox_provisioning(request, call_next):
-    # Provision only where email routing/status is relevant, avoiding unnecessary
-    # database work across unrelated business endpoints.
+    # Auto-provision only on routes where discovery/routing needs it.
+    # Do not run this pass before /mailbox/send (or other normal mailbox actions):
+    # an unrelated provisioning/database issue must never block an authenticated
+    # workspace from sending mail through its already-configured mailbox.
     path = request.url.path
-    if path.startswith("/webhooks/resend") or path.startswith("/mailbox") or path == "/integrations":
+    if path.startswith("/webhooks/resend") or path in {"/mailbox/status", "/mailbox/activate", "/integrations"}:
         _provision_missing_mailboxes()
     return await call_next(request)
