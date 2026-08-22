@@ -72,7 +72,7 @@ class ProviderRegistry:
     def __init__(self, providers: Iterable[ProviderProfile]):
         self.providers = tuple(providers)
 
-    def select(self, req: ModelRequirements) -> ProviderProfile:
+    def eligible(self, req: ModelRequirements):
         candidates = []
         for p in self.providers:
             if not p.available or req.capability not in p.capabilities:
@@ -88,4 +88,7 @@ class ProviderRegistry:
         if not candidates:
             raise LookupError("No approved connected provider satisfies this request")
         candidates.sort(key=lambda x: (x[0], x[1], x[2]))
-        return candidates[0][3]
+        return tuple(x[3] for x in candidates)
+
+    def select(self, req: ModelRequirements) -> ProviderProfile:
+        return self.eligible(req)[0]

@@ -7,7 +7,7 @@ from argon2.exceptions import VerifyMismatchError, InvalidHashError
 import sqlite3, uuid, hashlib, secrets, datetime, os, re, smtplib, ssl, base64, hmac, struct, time, json, urllib.request, urllib.error
 from email.message import EmailMessage
 
-APP_VERSION="0.9.0"
+APP_VERSION="1.0.0"
 ENV=os.getenv("ZORVIAN_ENV","production").lower()
 DB=os.getenv("SQLITE_PATH",os.path.join(os.path.dirname(__file__),"zorvian.db"))
 SESSION_HOURS=int(os.getenv("SESSION_HOURS","12")); LOCKOUT_MINUTES=int(os.getenv("LOCKOUT_MINUTES","15")); MAX_FAILED_LOGINS=int(os.getenv("MAX_FAILED_LOGINS","5"))

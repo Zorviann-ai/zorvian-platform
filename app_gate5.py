@@ -16,15 +16,25 @@ from intelligence.guard import guardian_check
 from intelligence.providers import ProviderProfile, ProviderRegistry
 
 
-_ALL_CAPABILITIES = frozenset({"communications", "automotive", "fresh-produce", "contracts-tenders", "growth", "documents", "operations", "mobility"})
+_ALL_CAPABILITIES = frozenset({
+    "communications", "executive-operations", "scheduling", "automotive",
+    "fresh-produce", "contracts-tenders", "growth", "marketing-content",
+    "sales-commercial", "operations", "analytics", "documents",
+    "document-assurance", "mobility", "automation-safety", "media-production",
+    "legal-workflow", "finance-workflow", "security-analysis",
+})
 
 
 def _registry():
-    profiles = [
-        ProviderProfile("zorvian-local-beta", _ALL_CAPABILITIES, True, True, True, 40, 5, True),
-    ]
+    profiles = []
+    if os.getenv("OPENAI_API_KEY"):
+        profiles.append(ProviderProfile("openai", _ALL_CAPABILITIES, True, True, True, 10, 20, True))
+    if os.getenv("ANTHROPIC_API_KEY"):
+        profiles.append(ProviderProfile("anthropic", _ALL_CAPABILITIES, True, True, True, 12, 22, True))
     if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
-        profiles.insert(0, ProviderProfile("zorvian-remote", _ALL_CAPABILITIES, True, True, True, 10, 20, True))
+        profiles.append(ProviderProfile("zorvian-remote", _ALL_CAPABILITIES, True, True, True, 15, 25, True))
+    if os.getenv("ALLOW_LOCAL_BETA", "1") == "1":
+        profiles.append(ProviderProfile("zorvian-local-beta", _ALL_CAPABILITIES, True, True, True, 90, 1, True))
     return ProviderRegistry(profiles)
 
 
@@ -52,10 +62,15 @@ async def gate5_beta_csp(request, call_next):
 
 @app.get("/intelligence/capabilities")
 def intelligence_capabilities(u=Depends(current_user)):
+    configured = []
+    if os.getenv("OPENAI_API_KEY"): configured.append("openai")
+    if os.getenv("ANTHROPIC_API_KEY"): configured.append("anthropic")
+    if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"): configured.append("private-adapter")
     return {
         "modules": sorted(SUPPORTED_MODULES),
         "guardian": "active",
-        "provider_mode": "remote" if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY") else "controlled-local-beta",
+        "provider_mode": "connected" if configured else "controlled-local-beta",
+        "configured_provider_count": len(configured),
         "external_actions": "approval-gated",
     }
 

@@ -35,13 +35,30 @@ class RouteDecision:
 APPROVER_ROLES = {"owner", "admin", "principal"}
 SPECIALISTS = {
     "receptionist": "communications",
+    "executive-assistant": "executive-operations",
+    "calendar-bookings": "scheduling",
+    "reservations": "scheduling",
     "zai-auto": "automotive",
     "freshx": "fresh-produce",
     "tenders": "contracts-tenders",
     "lead-intelligence": "growth",
+    "social-ai": "marketing-content",
+    "marketing": "marketing-content",
+    "sales-quotes": "sales-commercial",
+    "customer-support": "communications",
+    "tasks-workflow": "operations",
+    "business-intelligence": "analytics",
     "document-studio": "documents",
+    "document-proof": "document-assurance",
     "business-control": "operations",
     "route-intelligence": "mobility",
+    "freight-control": "mobility",
+    "robotics": "automation-safety",
+    "video-ai": "media-production",
+    "legal-pathways": "legal-workflow",
+    "finance-pathways": "finance-workflow",
+    "mailbox-communications": "communications",
+    "guardian-security": "security-analysis",
 }
 
 
