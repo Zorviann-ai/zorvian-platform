@@ -144,6 +144,62 @@ def _openai(prompt, ctx):
     return {"task_id": data.get("id", str(uuid.uuid4())), "output": text, "confidence": 0.88, "source_refs": (), "assumptions": ()}
 
 
+def stream_openai(prompt, ctx):
+    """Return an iterator of client-safe text deltas from the Responses API."""
+    key = os.getenv("OPENAI_API_KEY", "").strip()
+    model, effort, verbosity, max_output_tokens = _openai_profile(ctx.module)
+    if not key:
+        raise RuntimeError("OpenAI is not configured")
+    payload = json.dumps({
+        "model": model,
+        "instructions": _system_prompt(ctx),
+        "input": guardian_check(prompt),
+        "reasoning": {"effort": effort},
+        "text": {"verbosity": verbosity},
+        "max_output_tokens": max_output_tokens,
+        "store": False,
+        "stream": True,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
+    )
+    try:
+        response = urllib.request.urlopen(req, timeout=90)
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("OpenAI streaming request failed") from exc
+
+    def events():
+        event_name = ""
+        with response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8", "replace").strip()
+                if not line:
+                    continue
+                if line.startswith("event:"):
+                    event_name = line[6:].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                raw_data = line[5:].strip()
+                if raw_data == "[DONE]":
+                    break
+                try:
+                    event = json.loads(raw_data)
+                except json.JSONDecodeError:
+                    continue
+                event_type = event.get("type", event_name)
+                if event_type == "response.output_text.delta":
+                    delta = event.get("delta", "")
+                    if delta:
+                        yield delta
+                elif event_type in {"error", "response.failed"}:
+                    raise RuntimeError("OpenAI stream failed safely")
+    return events()
+
+
 def _anthropic(prompt, ctx):
     key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5").strip()
