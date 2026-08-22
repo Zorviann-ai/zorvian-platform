@@ -5,13 +5,14 @@ Extends the existing Zorvian FastAPI app without changing the proven Gate 2-4 co
 import os
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import app, audit, current_user, rate_limit, require, request_fingerprint
 from intelligence.connected import ConnectedIntelligenceService, ConnectedRequest, SUPPORTED_MODULES
 from intelligence.context import WorkspaceContext
-from intelligence.executor import execute_provider
+from intelligence.executor import execute_provider, stream_openai
 from intelligence.guard import guardian_check
 from intelligence.providers import ProviderProfile, ProviderRegistry
 
@@ -73,6 +74,42 @@ def intelligence_capabilities(u=Depends(current_user)):
         "configured_provider_count": len(configured),
         "external_actions": "approval-gated",
     }
+
+
+@app.post("/intelligence/stream")
+def intelligence_stream(d: IntelligenceRunIn, request: Request, u=Depends(current_user)):
+    require(u, "write")
+    if d.module not in SUPPORTED_MODULES:
+        raise HTTPException(422, "Unsupported Zorvian intelligence module")
+    ip, _ = request_fingerprint(request)
+    rate_limit("intelligence-stream:" + u["tenant_id"] + ":" + str(ip), 60, 3600)
+    try:
+        prompt = guardian_check(d.prompt)
+        ctx = WorkspaceContext(
+            tenant_id=u["tenant_id"],
+            user_id=u["id"],
+            role=u["role"],
+            module=d.module,
+            instructions=("Operate only inside this authenticated Zorvian workspace and module.",),
+        )
+        stream = stream_openai(prompt, ctx)
+    except PermissionError as e:
+        audit(u, "guardian_intelligence_stream_block", str(e), "warning")
+        raise HTTPException(403, str(e))
+    except RuntimeError as e:
+        audit(u, "intelligence_stream_failed", str(e), "warning")
+        raise HTTPException(502, "Intelligence provider failed safely")
+
+    audit(u, "intelligence_stream_started", f"{d.module} · {d.task}")
+    return StreamingResponse(
+        stream,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-Zorvian-Stream": "1",
+        },
+    )
 
 
 @app.post("/intelligence/run")
