@@ -21,33 +21,33 @@ os.environ["RESEND_WEBHOOK_SECRET"] = "whsec_" + base64.b64encode(WEBHOOK_KEY).d
 from fastapi.testclient import TestClient
 import app_gate8
 import app_gate9
+import app_gate10
 
-client = TestClient(app_gate9.app)
+client = TestClient(app_gate10.app)
 
 
 def auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def account():
-    r = client.post("/auth/register", json={"company_name":"Urban Test Ltd","name":"Urban Owner","email":"owner@urban.test","password":"Urban-secure-password-2026!"})
+def account(company="Urban Test Ltd", email="owner@urban.test"):
+    r = client.post("/auth/register", json={"company_name":company,"name":"Urban Owner","email":email,"password":"Urban-secure-password-2026!"})
     assert r.status_code == 201, r.text
     token = r.json()["verification_token"]
     assert client.post("/auth/verify-email", json={"token":token}).status_code == 200
-    login = client.post("/auth/login", json={"email":"owner@urban.test","password":"Urban-secure-password-2026!"})
+    login = client.post("/auth/login", json={"email":email,"password":"Urban-secure-password-2026!"})
     assert login.status_code == 200, login.text
     return login.json()["token"]
 
 
-def sign(body: bytes):
-    event_id = "msg_test_webhook_1"; ts = str(int(time.time()))
+def sign(body: bytes, event_id="msg_test_webhook_1"):
+    ts = str(int(time.time()))
     signed = f"{event_id}.{ts}.".encode() + body
     sig = base64.b64encode(hmac.new(WEBHOOK_KEY, signed, hashlib.sha256).digest()).decode()
     return {"svix-id":event_id,"svix-timestamp":ts,"svix-signature":f"v1,{sig}"}
 
 
 def test_operational_email_end_to_end(monkeypatch):
-    # Registration still exercises verification-token creation but never calls a live provider in CI.
     monkeypatch.setattr(app_gate8, "send_professional_email", lambda *args, **kwargs: True)
     token = account(); headers = auth(token)
     activation = client.post("/mailbox/activate", headers=headers, json={})
@@ -89,6 +89,35 @@ def test_operational_email_end_to_end(monkeypatch):
     integrations = client.get("/integrations", headers=headers).json()
     email = next(x for x in integrations if x["provider"] == "email")
     assert email["status"] == "connected"
+
+
+def test_existing_tenant_direct_inbound_is_auto_provisioned(monkeypatch):
+    monkeypatch.setattr(app_gate8, "send_professional_email", lambda *args, **kwargs: True)
+    token = account("Direct Route Ltd", "owner@direct-route.test")
+    headers = auth(token)
+
+    # No /mailbox/activate call: this reproduces tenants that existed before
+    # the mailbox feature was deployed.
+    integrations = client.get("/integrations", headers=headers)
+    assert integrations.status_code == 200
+    email = next(x for x in integrations.json() if x["provider"] == "email")
+    assert email["status"] == "connected"
+    inbound_address = json.loads(email["config_json"])["inbound_address"]
+    assert inbound_address == "direct-route-ltd@inbound.zorvian.test"
+
+    def fake_resend(method, path, payload=None, extra_headers=None):
+        assert method == "GET"
+        return {"id":"provider-direct-1","from":"Customer <customer2@example.com>","to":[inbound_address],"subject":"Direct inbound","text":"Please call me back.","html":"<p>Please call me back.</p>","message_id":"<direct-1@example.com>"}
+    monkeypatch.setattr(app_gate9, "_resend_json", fake_resend)
+
+    event = {"type":"email.received","created_at":"2026-08-22T08:00:00Z","data":{"email_id":"provider-direct-1","from":"Customer <customer2@example.com>","to":[inbound_address],"subject":"Direct inbound","message_id":"<direct-1@example.com>","attachments":[]}}
+    raw = json.dumps(event, separators=(",",":")).encode()
+    inbound = client.post("/webhooks/resend", content=raw, headers={**sign(raw, "msg_direct_webhook_1"),"content-type":"application/json"})
+    assert inbound.status_code == 200, inbound.text
+    assert inbound.json()["status"] == "received"
+
+    messages = client.get("/mailbox/messages", headers=headers).json()
+    assert any(m["direction"] == "inbound" and m["subject"] == "Direct inbound" for m in messages)
 
 
 def teardown_module(module):
