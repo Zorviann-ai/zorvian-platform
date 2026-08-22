@@ -19,6 +19,7 @@ WEBHOOK_KEY = b"gate7-test-webhook-key-32-bytes!!"
 os.environ["RESEND_WEBHOOK_SECRET"] = "whsec_" + base64.b64encode(WEBHOOK_KEY).decode()
 
 from fastapi.testclient import TestClient
+import app_gate8
 import app_gate9
 
 client = TestClient(app_gate9.app)
@@ -46,6 +47,8 @@ def sign(body: bytes):
 
 
 def test_operational_email_end_to_end(monkeypatch):
+    # Registration still exercises verification-token creation but never calls a live provider in CI.
+    monkeypatch.setattr(app_gate8, "send_professional_email", lambda *args, **kwargs: True)
     token = account(); headers = auth(token)
     activation = client.post("/mailbox/activate", headers=headers, json={})
     assert activation.status_code == 200, activation.text
