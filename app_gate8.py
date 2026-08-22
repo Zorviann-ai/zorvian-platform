@@ -1,9 +1,9 @@
 """Production verification routing plus professional Core email presentation."""
+import json
 import os
 import secrets
-import json
-import urllib.request
 import urllib.error
+import urllib.request
 
 import app as core_app
 import app_gate7 as gate7
@@ -23,14 +23,13 @@ def verification_base_url() -> str:
 
 
 def send_professional_email(to: str, subject: str, text: str, *, html: str | None = None) -> bool:
-    """Send multipart-compatible Resend payload with professional HTML plus text fallback."""
+    """Send professional HTML with a plain-text fallback through Resend."""
     api_key = os.getenv("RESEND_API_KEY") or os.getenv("SMTP_PASSWORD")
     sender = os.getenv("SMTP_FROM")
     if not api_key or not sender:
         return False
     payload = {"from": sender, "to": [to], "subject": subject, "text": text}
-    if html:
-        payload["html"] = html
+    payload["html"] = html or render_email(title=subject, body=text, client_name="ZORVIAN", preheader=text[:120])
     req = urllib.request.Request(
         "https://api.resend.com/emails",
         data=json.dumps(payload).encode("utf-8"),
@@ -47,16 +46,26 @@ def send_professional_email(to: str, subject: str, text: str, *, html: str | Non
         raise RuntimeError(f"Resend HTTPS connection failed: {exc.reason}") from exc
 
 
+def send_core_email(to: str, subject: str, text: str) -> bool:
+    """Default renderer for verification, recovery, reset and invitation mail."""
+    return send_professional_email(
+        to,
+        subject,
+        text,
+        html=render_email(title=subject, body=text, client_name="ZORVIAN", preheader=text[:120]),
+    )
+
+
 def issue_email_verification_fixed(uid: str, email: str):
     raw = secrets.token_urlsafe(32)
     c = core_app.db()
     c.execute("INSERT INTO email_verifications VALUES (?,?,?,?,?,?)", (str(__import__("uuid").uuid4()), uid, core_app.hash_token(raw), core_app.future(hours=24), None, core_app.now()))
     c.commit(); c.close()
     verify_url = f"{verification_base_url()}/auth/verify-email-link?token={raw}"
-    text = f"Verify your Zorvian account:\n\n{verify_url}\n\nThis secure link expires in 24 hours."
+    text = f"Welcome to Zorvian.\n\nPlease confirm your email address to activate secure access to your workspace.\n\nVerification link: {verify_url}\n\nThis secure link expires in 24 hours."
     html = render_email(
         title="Verify your Zorvian account",
-        body="Welcome to Zorvian. Please confirm your email address to activate secure access to your workspace.\nThis secure verification link expires in 24 hours.",
+        body="Welcome to Zorvian.\nPlease confirm your email address to activate secure access to your workspace.\nThis secure verification link expires in 24 hours.",
         client_name="ZORVIAN",
         cta_label="VERIFY EMAIL ADDRESS",
         cta_url=verify_url,
@@ -66,6 +75,9 @@ def issue_email_verification_fixed(uid: str, email: str):
     return raw, delivered
 
 
-# Preserve the proven verification destination while upgrading presentation.
+# Patch every currently loaded Core/Gate 7 transactional path so system mail is
+# always professionally rendered. Verification retains its proven destination.
+core_app.send_email = send_core_email
+gate7.send_email = send_core_email
 core_app.issue_email_verification = issue_email_verification_fixed
 gate7.issue_email_verification = issue_email_verification_fixed
