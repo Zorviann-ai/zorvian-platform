@@ -110,20 +110,13 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
         raise HTTPException(502, "Intelligence provider failed safely")
 
     audit(u, "intelligence_run", f"{d.module} · {d.task} · provider={result.provider}")
+    # Keep infrastructure and provider identities inside Zorvian Core. Client
+    # portals receive only the completed work and the approval state they need.
     return {
-        "module": result.module,
-        "capability": result.capability,
+        "status": "completed",
         "output": result.output,
-        "confidence": result.confidence,
-        "provider": result.provider,
-        "human_approval_required": result.human_approval_required,
-        "tool_execution_allowed": result.tool_execution_allowed,
-        "provenance": {
-            "task_id": result.provenance.task_id,
-            "source_refs": list(result.provenance.source_refs),
-            "assumptions": list(result.provenance.assumptions),
-            "needs_review": result.provenance.needs_review,
-        },
+        "approval_required": result.human_approval_required,
+        "external_action_executed": False,
     }
 
 
