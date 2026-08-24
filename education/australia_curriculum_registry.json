@@ -1,16 +1,26 @@
 {
   "product": "Zorvian Australian Education Tutor",
-  "version": "0.1.0",
-  "target_age_min": 6,
-  "target_age_max": 12,
-  "default_framework": "Australian Curriculum v9.0",
+  "version": "0.2.0",
+  "coverage": "All school students across Australia, Foundation/Kindergarten-Year 12",
+  "age_restriction": false,
+  "default_framework": "Australian Curriculum v9.0 for Foundation-Year 10; jurisdiction-specific senior-secondary framework for Years 11-12",
+  "jurisdictions": [
+    "New South Wales",
+    "Victoria",
+    "Queensland",
+    "Western Australia",
+    "South Australia",
+    "Tasmania",
+    "Australian Capital Territory",
+    "Northern Territory"
+  ],
   "frameworks": [
     {
       "id": "acara-v9",
       "name": "Australian Curriculum Version 9.0",
       "authority": "ACARA",
       "scope": "Foundation-Year 10",
-      "age_route": "Map age 6-12 primarily to Years 1-7, then confirm year level with parent/school profile",
+      "routing_note": "Use as the national baseline where the jurisdiction adopts or aligns to it; always prefer the relevant state/territory curriculum implementation when it differs.",
       "learning_areas": [
         "English",
         "Mathematics",
@@ -28,84 +38,90 @@
       "name": "NSW Curriculum",
       "authority": "NSW Education Standards Authority",
       "scope": "K-12",
-      "primary_stages": {
+      "stages": {
         "Early Stage 1": "Kindergarten",
         "Stage 1": "Years 1-2",
         "Stage 2": "Years 3-4",
-        "Stage 3": "Years 5-6"
+        "Stage 3": "Years 5-6",
+        "Stage 4": "Years 7-8",
+        "Stage 5": "Years 9-10",
+        "Stage 6": "Years 11-12"
       },
-      "primary_learning_areas": [
+      "learning_areas": [
         "English",
         "Mathematics",
-        "Science and Technology",
+        "Science",
+        "Technological and Applied Studies",
         "Human Society and its Environment",
         "Personal Development, Health and Physical Education",
         "Creative Arts",
-        "Languages"
+        "Languages",
+        "Vocational Education and Training"
       ],
       "source": "https://curriculum.nsw.edu.au/"
     },
     {
       "id": "vic-vcaa",
-      "name": "Victorian Curriculum F-10",
+      "name": "Victorian Curriculum and Senior Secondary",
       "authority": "Victorian Curriculum and Assessment Authority",
-      "scope": "Foundation-Year 10",
-      "routing_note": "Use achievement level as well as school year; Victorian Curriculum is a learning continuum.",
-      "source": "https://victoriancurriculum.vcaa.vic.edu.au/"
+      "scope": "Foundation-Year 12",
+      "routing_note": "Use Victorian Curriculum F-10 learning levels for Foundation-Year 10 and VCAA senior-secondary study designs/pathways for Years 11-12. Route by demonstrated learning level as well as enrolled year where appropriate.",
+      "source": "https://www.vcaa.vic.edu.au/"
     },
     {
       "id": "qld-qcaa",
-      "name": "Queensland P-10 curriculum implementation",
+      "name": "Queensland Curriculum and Senior Secondary",
       "authority": "Queensland Curriculum and Assessment Authority",
-      "scope": "Prep-Year 10",
+      "scope": "Prep-Year 12",
       "source": "https://www.qcaa.qld.edu.au/"
     },
     {
-      "id": "wa-scca",
-      "name": "Western Australian Curriculum",
+      "id": "wa-scsa",
+      "name": "Western Australian Curriculum and Senior Secondary",
       "authority": "School Curriculum and Standards Authority",
-      "scope": "K-10",
-      "source": "https://k10outline.scsa.wa.edu.au/"
+      "scope": "K-Year 12",
+      "source": "https://www.scsa.wa.edu.au/"
     },
     {
-      "id": "sa-education",
-      "name": "South Australian curriculum implementation",
-      "authority": "Department for Education South Australia",
-      "scope": "Primary and middle years",
+      "id": "sa-education-sace",
+      "name": "South Australian Curriculum and Senior Secondary",
+      "authority": "Department for Education South Australia / SACE Board",
+      "scope": "Reception-Year 12",
       "source": "https://www.education.sa.gov.au/"
     },
     {
-      "id": "tas-education",
-      "name": "Tasmanian curriculum implementation",
-      "authority": "Department for Education, Children and Young People Tasmania",
-      "scope": "Primary and secondary",
+      "id": "tas-curriculum-tasc",
+      "name": "Tasmanian Curriculum and Senior Secondary",
+      "authority": "Department for Education, Children and Young People / TASC",
+      "scope": "Foundation-Year 12",
       "source": "https://www.decyp.tas.gov.au/"
     },
     {
-      "id": "act-education",
-      "name": "ACT curriculum implementation",
-      "authority": "ACT Education Directorate",
-      "scope": "Primary and secondary",
+      "id": "act-curriculum-bsss",
+      "name": "ACT Curriculum and Senior Secondary",
+      "authority": "ACT Education Directorate / Board of Senior Secondary Studies",
+      "scope": "Preschool-Year 12",
       "source": "https://www.education.act.gov.au/"
     },
     {
-      "id": "nt-education",
-      "name": "Northern Territory curriculum implementation",
+      "id": "nt-education-ntcet",
+      "name": "Northern Territory Curriculum and Senior Secondary",
       "authority": "Northern Territory Department of Education and Training",
-      "scope": "Primary and secondary",
+      "scope": "Transition-Year 12",
       "source": "https://education.nt.gov.au/"
     }
   ],
   "answering_rules": {
-    "must_identify": ["state_or_territory", "school_year_or_stage", "subject"],
-    "fallback": "If location or year is unknown, answer from Australian Curriculum v9.0 and clearly label the assumed year level.",
+    "must_identify": ["state_or_territory", "school_year_stage_or_learning_level", "subject_or_course"],
+    "fallback": "If location or level is unknown, identify the assumption explicitly, use a verified national baseline for Foundation-Year 10 or a verified jurisdictional senior-secondary source for Years 11-12, and never invent a syllabus requirement.",
     "pedagogy": [
-      "Explain at the child's level before giving the final answer",
-      "Use worked examples for Mathematics and Science",
-      "Use age-appropriate vocabulary",
-      "Offer a simpler explanation when the child is stuck",
+      "Teach at the student's demonstrated learning level rather than by age",
+      "Explain reasoning before or alongside the final answer",
+      "Use worked examples where appropriate",
+      "Offer simpler explanations, hints, quizzes, revision and exam-style practice",
+      "Use age-neutral, respectful student language",
       "Do not present invented syllabus requirements as fact",
-      "Keep parent and teacher view separate from child view"
+      "Keep parent and teacher views separate from the student view"
     ]
   }
 }
