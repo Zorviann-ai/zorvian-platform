@@ -1,0 +1,111 @@
+{
+  "product": "Zorvian Australian Education Tutor",
+  "version": "0.1.0",
+  "target_age_min": 6,
+  "target_age_max": 12,
+  "default_framework": "Australian Curriculum v9.0",
+  "frameworks": [
+    {
+      "id": "acara-v9",
+      "name": "Australian Curriculum Version 9.0",
+      "authority": "ACARA",
+      "scope": "Foundation-Year 10",
+      "age_route": "Map age 6-12 primarily to Years 1-7, then confirm year level with parent/school profile",
+      "learning_areas": [
+        "English",
+        "Mathematics",
+        "Science",
+        "Health and Physical Education",
+        "Humanities and Social Sciences",
+        "The Arts",
+        "Technologies",
+        "Languages"
+      ],
+      "source": "https://www.australiancurriculum.edu.au/"
+    },
+    {
+      "id": "nsw-nesa",
+      "name": "NSW Curriculum",
+      "authority": "NSW Education Standards Authority",
+      "scope": "K-12",
+      "primary_stages": {
+        "Early Stage 1": "Kindergarten",
+        "Stage 1": "Years 1-2",
+        "Stage 2": "Years 3-4",
+        "Stage 3": "Years 5-6"
+      },
+      "primary_learning_areas": [
+        "English",
+        "Mathematics",
+        "Science and Technology",
+        "Human Society and its Environment",
+        "Personal Development, Health and Physical Education",
+        "Creative Arts",
+        "Languages"
+      ],
+      "source": "https://curriculum.nsw.edu.au/"
+    },
+    {
+      "id": "vic-vcaa",
+      "name": "Victorian Curriculum F-10",
+      "authority": "Victorian Curriculum and Assessment Authority",
+      "scope": "Foundation-Year 10",
+      "routing_note": "Use achievement level as well as school year; Victorian Curriculum is a learning continuum.",
+      "source": "https://victoriancurriculum.vcaa.vic.edu.au/"
+    },
+    {
+      "id": "qld-qcaa",
+      "name": "Queensland P-10 curriculum implementation",
+      "authority": "Queensland Curriculum and Assessment Authority",
+      "scope": "Prep-Year 10",
+      "source": "https://www.qcaa.qld.edu.au/"
+    },
+    {
+      "id": "wa-scca",
+      "name": "Western Australian Curriculum",
+      "authority": "School Curriculum and Standards Authority",
+      "scope": "K-10",
+      "source": "https://k10outline.scsa.wa.edu.au/"
+    },
+    {
+      "id": "sa-education",
+      "name": "South Australian curriculum implementation",
+      "authority": "Department for Education South Australia",
+      "scope": "Primary and middle years",
+      "source": "https://www.education.sa.gov.au/"
+    },
+    {
+      "id": "tas-education",
+      "name": "Tasmanian curriculum implementation",
+      "authority": "Department for Education, Children and Young People Tasmania",
+      "scope": "Primary and secondary",
+      "source": "https://www.decyp.tas.gov.au/"
+    },
+    {
+      "id": "act-education",
+      "name": "ACT curriculum implementation",
+      "authority": "ACT Education Directorate",
+      "scope": "Primary and secondary",
+      "source": "https://www.education.act.gov.au/"
+    },
+    {
+      "id": "nt-education",
+      "name": "Northern Territory curriculum implementation",
+      "authority": "Northern Territory Department of Education and Training",
+      "scope": "Primary and secondary",
+      "source": "https://education.nt.gov.au/"
+    }
+  ],
+  "answering_rules": {
+    "must_identify": ["state_or_territory", "school_year_or_stage", "subject"],
+    "fallback": "If location or year is unknown, answer from Australian Curriculum v9.0 and clearly label the assumed year level.",
+    "pedagogy": [
+      "Explain at the child's level before giving the final answer",
+      "Use worked examples for Mathematics and Science",
+      "Use age-appropriate vocabulary",
+      "Offer a simpler explanation when the child is stuck",
+      "Do not present invented syllabus requirements as fact",
+      "Keep parent and teacher view separate from child view"
+    ]
+  }
+}
