@@ -32,6 +32,15 @@ async function enhanceCRM(response) {
   if (pName && !pName.value) pName.value = 'Your Total Tutor';
   if (pCategory && !pCategory.value) pCategory.value = 'Education / Client build';
 
+  const studioButton = document.querySelector('button[data-page="studio"]');
+  if (studioButton && !byId('socialVideoStudioLink')) {
+    const socialButton = document.createElement('button');
+    socialButton.id = 'socialVideoStudioLink';
+    socialButton.textContent = 'Social & Video Studio';
+    socialButton.onclick = () => { location.href = '/social-studio.html'; };
+    studioButton.insertAdjacentElement('afterend', socialButton);
+  }
+
   const originalAddProject = window.addProject;
   if (typeof originalAddProject === 'function') {
     window.addProject = async function() {
