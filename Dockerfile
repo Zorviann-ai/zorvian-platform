@@ -7,4 +7,4 @@ COPY intelligence ./intelligence
 COPY deployment ./deployment
 COPY beta ./beta
 EXPOSE 8000
-CMD ["sh","-c","uvicorn app_gate11:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh","-c","uvicorn app_gate12:app --host 0.0.0.0 --port ${PORT:-8000}"]
