@@ -86,7 +86,6 @@ async function forgotPassword(request, env) {
   if (!email || !email.includes("@")) return json({ error: "email_required" }, 400);
 
   const user = await env.DB.prepare("SELECT id,email FROM users WHERE lower(email)=?").bind(email).first();
-  // Always return the same public response so account existence is not disclosed.
   if (!user) return json({ ok: true, message: "If that account exists, a reset email has been sent." });
 
   const token = `${uid()}${uid()}`.replaceAll("-", "");
@@ -130,11 +129,57 @@ async function resetPassword(request, env) {
   return json({ ok: true, message: "Password updated. You can now sign in." });
 }
 
+async function injectForgotPassword(response) {
+  const type = response.headers.get("content-type") || "";
+  if (!type.includes("text/html") || !response.ok) return response;
+  let html = await response.text();
+  if (!html.includes('id="loginForm"') || html.includes('id="forgotPasswordButton"')) {
+    return new Response(html, { status: response.status, statusText: response.statusText, headers: response.headers });
+  }
+
+  html = html.replace(
+    '</form><div class="auth-help">',
+    '</form><button id="forgotPasswordButton" class="secondary" type="button" style="width:100%;margin-top:10px;min-height:44px">FORGOT PASSWORD</button><div id="forgotPasswordStatus" class="auth-status" role="status"></div><div class="auth-help">'
+  );
+
+  html = html.replace(
+    'async function signOut(){',
+    `async function requestPasswordReset(){
+      const email=$('loginEmail').value.trim();
+      const status=$('forgotPasswordStatus');
+      const button=$('forgotPasswordButton');
+      if(!email){status.textContent='Enter your email address first.';return $('loginEmail').focus()}
+      button.disabled=true;status.textContent='Sending reset link...';
+      try{
+        const data=await api('/auth/forgot-password',{method:'POST',body:JSON.stringify({email})});
+        status.style.color='var(--success)';
+        status.textContent=data.message||'If that account exists, a reset email has been sent.';
+      }catch(error){
+        status.style.color='var(--danger)';
+        status.textContent='Password reset could not be sent. Please try again.';
+      }finally{button.disabled=false}
+    }
+    async function signOut(){`
+  );
+
+  html = html.replace(
+    "renderTools();$('loginForm').addEventListener('submit',submitLogin);",
+    "renderTools();$('loginForm').addEventListener('submit',submitLogin);$('forgotPasswordButton')?.addEventListener('click',requestPasswordReset);"
+  );
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("cache-control", "no-store");
+  return new Response(html, { status: response.status, statusText: response.statusText, headers });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/api/auth/forgot-password" && request.method === "POST") return forgotPassword(request, env);
     if (url.pathname === "/api/auth/reset-password" && request.method === "POST") return resetPassword(request, env);
-    return app.fetch(request, env, ctx);
+    const response = await app.fetch(request, env, ctx);
+    if (request.method === "GET") return injectForgotPassword(response);
+    return response;
   }
 };
