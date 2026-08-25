@@ -1,4 +1,4 @@
-name: Zorvian Gate 6 Production Readiness Check
+name: Caelomere Gate 6 Production Readiness Check
 
 on:
   push:
@@ -44,9 +44,9 @@ jobs:
         run: python -m pytest -q tests/test_gate3_*.py
       - name: Gate 2 security regression
         env:
-          ZORVIAN_ENV: test
+          CAELOMERE_ENV: test
           DEV_EXPOSE_TOKENS: '1'
           GUARDIAN_HASH_PEPPER: gate2-ci-pepper-not-production
-          ALLOWED_ORIGINS: https://zorvian.co.uk,https://www.zorvian.co.uk
+          ALLOWED_ORIGINS: https://caelomere.com,https://www.caelomere.com
           PYTHONPATH: .
         run: python -m pytest -q tests/test_gate2.py
