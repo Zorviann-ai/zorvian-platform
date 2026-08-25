@@ -35,7 +35,7 @@ test('AI specialist identities no longer expose the legacy product brand', async
 
 test('main hub keeps Caelomere present while the user works', async () => {
   const html=await read('public/index.html');
-  for(const marker of ['caelomere-mark.svg','Caelomere is here','OPEN CRM','OPEN SOCIAL','OPEN TV STUDIO','PUBLIC WEBSITE','SPOKEN ANSWERS ON','/api/ai/ask']) assert.ok(html.includes(marker),marker);
+  for(const marker of ['caelomere-mark.svg','Caelomere is here','OPEN CRM','OPEN SOCIAL','OPEN TV STUDIO','PUBLIC WEBSITE','SPOKEN ANSWERS ON',"api('/ai/ask'"]) assert.ok(html.includes(marker),marker);
   assert.ok(html.includes('SpeechSynthesisUtterance'));
 });
 
