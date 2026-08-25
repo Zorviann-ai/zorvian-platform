@@ -152,6 +152,7 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
     return {
         "status": "completed",
         "module": d.module,
+        "capability": "automotive",
         "output": result.output,
         "human_approval_required": result.human_approval_required,
 "external_action_executed": False,
