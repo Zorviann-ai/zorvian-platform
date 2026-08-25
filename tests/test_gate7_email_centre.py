@@ -3,7 +3,7 @@ import tempfile
 
 _fd, DB_PATH = tempfile.mkstemp(prefix="zorvian-email-centre-", suffix=".db")
 os.close(_fd)
-os.environ["CAELOMERE_ENV"] = "test"
+os.environ["ZORVIAN_ENV"] = "test"
 os.environ["SQLITE_PATH"] = DB_PATH
 os.environ["GUARDIAN_HASH_PEPPER"] = "gate7-email-centre-test"
 os.environ["RESEND_API_KEY"] = "re_test"
