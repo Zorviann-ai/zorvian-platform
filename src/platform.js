@@ -4,6 +4,7 @@ import { handleMCP } from './mcp.js';
 import { handleSocial } from './social.js';
 import { handleMedia } from './media.js';
 import { handleAuthors } from './authors.js';
+import { handleCore } from './core.js';
 
 async function enhanceCRM(response) {
   const type = response.headers.get('content-type') || '';
@@ -87,6 +88,7 @@ export default {
     if (url.pathname.startsWith('/api/social/')) return handleSocial(request, env);
     if (url.pathname.startsWith('/api/media/')) return handleMedia(request, env);
     if (url.pathname.startsWith('/api/authors/')) return handleAuthors(request, env);
+    if (url.pathname.startsWith('/api/core/')) return handleCore(request, env);
     const response = await app.fetch(request, env, ctx);
     if (request.method === 'GET' && (url.pathname === '/crm' || url.pathname === '/crm.html')) {
       return enhanceCRM(response);
