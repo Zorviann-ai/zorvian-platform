@@ -2,6 +2,7 @@ import app from "./entry.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" };
 const RESET_TTL_MS = 30 * 60 * 1000;
+const PASSWORD_HASH_ITERATIONS = 210000;
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), { status, headers: { ...JSON_HEADERS, ...headers } });
@@ -19,11 +20,11 @@ async function hashPassword(password, salt = crypto.randomUUID()) {
     ["deriveBits"]
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 10000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: PASSWORD_HASH_ITERATIONS, hash: "SHA-256" },
     key,
     256
   );
-  return salt + "$" + btoa(String.fromCharCode(...new Uint8Array(bits)));
+  return `pbkdf2_sha256$${PASSWORD_HASH_ITERATIONS}$${salt}$${btoa(String.fromCharCode(...new Uint8Array(bits)))}`;
 }
 
 async function sha256(text) {
