@@ -5,11 +5,32 @@ const uid = () => crypto.randomUUID();
 const rpc = (id, result, extraHeaders = {}) => new Response(JSON.stringify({ jsonrpc: '2.0', id, result }), { status: 200, headers: { ...JSON_HEADERS, ...extraHeaders } });
 const rpcError = (id, code, message, status = 200) => new Response(JSON.stringify({ jsonrpc: '2.0', id: id ?? null, error: { code, message } }), { status, headers: JSON_HEADERS });
 
-function authorized(request, env) {
+async function secureEqual(left, right) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(String(left || ''))),
+    crypto.subtle.digest('SHA-256', encoder.encode(String(right || '')))
+  ]);
+  const x = new Uint8Array(a), y = new Uint8Array(b);
+  let difference = 0;
+  for (let i = 0; i < x.length; i += 1) difference |= x[i] ^ y[i];
+  return difference === 0;
+}
+
+async function authorized(request, env) {
   const auth = request.headers.get('Authorization') || '';
   if (!env.CRM_ADMIN_TOKEN || !auth.startsWith('Bearer ')) return false;
   const supplied = auth.slice(7).trim();
-  return supplied && supplied === env.CRM_ADMIN_TOKEN;
+  return Boolean(supplied) && secureEqual(supplied, env.CRM_ADMIN_TOKEN);
+}
+
+function corsHeaders(request, env) {
+  const origin = request.headers.get('Origin');
+  if (!origin) return {};
+  const allowed = String(env.MCP_ALLOWED_ORIGINS || new URL(request.url).origin)
+    .split(',').map(value => value.trim()).filter(Boolean);
+  if (!allowed.includes(origin)) return { vary: 'Origin' };
+  return { 'access-control-allow-origin': origin, vary: 'Origin' };
 }
 
 async function ensureSchema(env) {
@@ -181,8 +202,8 @@ async function callTool(name, args, env) {
 }
 
 export async function handleMCP(request, env) {
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization,content-type,mcp-session-id,mcp-protocol-version,mcp-method,mcp-name', 'access-control-allow-methods': 'POST,GET,DELETE,OPTIONS' } });
-  if (!authorized(request, env)) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { ...JSON_HEADERS, 'www-authenticate': 'Bearer realm="caelomere-crm-mcp"' } });
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...corsHeaders(request, env), 'access-control-allow-headers': 'authorization,content-type,mcp-session-id,mcp-protocol-version,mcp-method,mcp-name', 'access-control-allow-methods': 'POST,GET,DELETE,OPTIONS', 'access-control-max-age': '600' } });
+  if (!(await authorized(request, env))) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { ...JSON_HEADERS, 'www-authenticate': 'Bearer realm="caelomere-crm-mcp"' } });
   if (!env.DB) return rpcError(null, -32000, 'CRM database unavailable', 503);
   if (request.method === 'DELETE') return new Response(null, { status: 204 });
   if (request.method === 'GET') return new Response(JSON.stringify({ name: 'Caelomere CRM MCP', status: 'ready', endpoint: '/mcp' }), { status: 200, headers: JSON_HEADERS });
