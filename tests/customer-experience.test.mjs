@@ -44,3 +44,8 @@ test('new brand assets define the celestial identity', async () => {
   assert.match(svg,/celestial C orbit/i);
   for(const colour of ['#07131D','#102A3A','#28D7C0','#E9F1ED','#E7B84B','#7B6CF6']) assert.ok(svg.includes(colour)||css.includes(colour),colour);
 });
+
+test('core identity is Caelomere Celestial Core', async () => {
+  const [hub,entry,crm]=await Promise.all([read('public/index.html'),read('src/entry.js'),read('src/crm.js')]);
+  for(const source of [hub,entry,crm]) assert.ok(source.includes('Caelomere Celestial Core'));
+});
