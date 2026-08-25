@@ -1,26 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
-  <title id="title">Caelomere Celestial Core logo</title>
-  <desc id="desc">A dynamic orbital gold and ivory core emblem with Caelomere Celestial Core wordmark on black.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
+  <title id="title">Caelomere Celestial Core luxury logo</title>
+  <desc id="desc">A champagne-gold celestial C enclosing a moonstone and north star beside the Celestial Core wordmark.</desc>
   <defs>
-    <radialGradient id="core" cx="42%" cy="35%" r="70%"><stop offset="0" stop-color="#FFF2B2"/><stop offset="0.26" stop-color="#E7B84B"/><stop offset="0.67" stop-color="#B67518"/><stop offset="1" stop-color="#4C2B05"/></radialGradient>
-    <linearGradient id="orbitA" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F4D684"/><stop offset="1" stop-color="#8A5B16"/></linearGradient>
-    <linearGradient id="orbitB" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#F5F0E7"/><stop offset="1" stop-color="#746443"/></linearGradient>
-    <filter id="coreGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <linearGradient id="champagne" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#76501D"/><stop offset="0.3" stop-color="#E8D39E"/><stop offset="0.55" stop-color="#B98A3E"/><stop offset="0.82" stop-color="#F1E2B8"/><stop offset="1" stop-color="#8C692C"/>
+    </linearGradient>
+    <radialGradient id="moonstone" cx="35%" cy="28%" r="75%"><stop offset="0" stop-color="#FFFDF7"/><stop offset="0.48" stop-color="#D9D5CB"/><stop offset="1" stop-color="#807B70"/></radialGradient>
   </defs>
-  <rect width="1400" height="420" rx="34" fill="#050505"/>
-  <g transform="translate(58 44)">
-    <circle cx="166" cy="166" r="132" fill="none" stroke="#2F2413"/>
-    <ellipse cx="166" cy="166" rx="137" ry="57" fill="none" stroke="url(#orbitA)" stroke-width="9" transform="rotate(-22 166 166)"/>
-    <ellipse cx="166" cy="166" rx="126" ry="49" fill="none" stroke="url(#orbitB)" stroke-width="7" transform="rotate(55 166 166)" opacity=".86"/>
-    <ellipse cx="166" cy="166" rx="106" ry="39" fill="none" stroke="#B47C21" stroke-width="5" transform="rotate(118 166 166)" opacity=".8"/>
-    <circle cx="166" cy="166" r="53" fill="url(#core)" filter="url(#coreGlow)"/>
-    <path d="M146 127C170 143 183 158 186 180C169 166 153 158 132 156C139 146 143 137 146 127Z" fill="#F7E6AA" opacity=".75"/>
-    <circle cx="286" cy="98" r="8" fill="#F4D684"/><circle cx="52" cy="221" r="6" fill="#F5F0E7"/><circle cx="224" cy="286" r="5" fill="#B67518"/>
+  <rect width="1600" height="520" fill="#070707"/>
+  <g transform="translate(85 65)">
+    <circle cx="190" cy="195" r="150" fill="none" stroke="#2B261D" stroke-width="1"/>
+    <path d="M288 91A145 145 0 1 0 294 291A124 124 0 1 1 288 91Z" fill="url(#champagne)"/>
+    <circle cx="194" cy="195" r="48" fill="url(#moonstone)" stroke="#E8D39E" stroke-width="2"/>
+    <path d="M299 83L307 109L333 117L307 125L299 151L291 125L265 117L291 109Z" fill="#EEE7D9"/>
+    <circle cx="299" cy="117" r="3.5" fill="#B98A3E"/><circle cx="126" cy="102" r="4" fill="#C8AE79"/><circle cx="321" cy="231" r="3" fill="#EEE7D9"/>
   </g>
-  <g transform="translate(415 78)">
-    <text x="0" y="80" fill="#F5F0E7" font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="600" letter-spacing="7">CAELOMERE</text>
-    <text x="3" y="154" fill="#E7B84B" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800" letter-spacing="13">CELESTIAL CORE</text>
-    <line x1="4" y1="189" x2="806" y2="189" stroke="#8A651F" stroke-width="1"/>
-    <text x="4" y="232" fill="#CFC8BA" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" letter-spacing="7">LISTEN · CREATE · CONNECT · PROTECT</text>
+  <g transform="translate(485 112)">
+    <text x="0" y="108" fill="#F3EFE7" font-family="Baskerville, 'Libre Baskerville', Georgia, serif" font-size="102" font-weight="400" letter-spacing="13">CAELOMERE</text>
+    <line x1="5" y1="151" x2="957" y2="151" stroke="#A97D37" stroke-width="1"/>
+    <text x="5" y="225" fill="#D1B87F" font-family="Baskerville, 'Libre Baskerville', Georgia, serif" font-size="48" font-weight="400" letter-spacing="17">CELESTIAL CORE</text>
   </g>
 </svg>
