@@ -153,8 +153,10 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
         "status": "completed",
         "output": result.output,
         "human_approval_required": result.human_approval_required,
-        "external_action_executed": False,
-    }
+"external_action_executed": False,
+"tool_execution_allowed": False,
+}
+  
 
 
 # Served from the same origin as Core so beta clients can authenticate without
