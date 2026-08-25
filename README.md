@@ -34,3 +34,13 @@ Demo login:
 External telephony, SMS, email, live social publishing, live maps/traffic, payments,
 travel, vehicle data and video rendering remain gated until real provider accounts,
 credentials and commercial permissions are connected.
+
+
+## Brand and legal identity
+
+- Product brand: **Caelomere**
+- Registered company: **Caelomere Ltd**
+- Primary website: **https://caelomere.com**
+- `caelomere.co.uk` may be used as a redirect or domain alias.
+
+Legacy internal identifiers such as database names, Worker names and session-cookie names remain unchanged during the rebrand so existing deployments and user sessions are not broken.
