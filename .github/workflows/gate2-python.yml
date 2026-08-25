@@ -31,7 +31,7 @@ jobs:
         run: python -m py_compile app.py
       - name: Gate 2 account and isolation tests
         env:
-          CAELOMERE_ENV: test
+          ZORVIAN_ENV: test
           DEV_EXPOSE_TOKENS: '1'
           GUARDIAN_HASH_PEPPER: gate2-ci-pepper-not-production
           ALLOWED_ORIGINS: https://caelomere.com,https://www.caelomere.com
