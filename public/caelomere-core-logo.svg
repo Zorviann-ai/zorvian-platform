@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
+  <title id="title">Caelomere Celestial Core logo</title>
+  <desc id="desc">A dynamic orbital gold and ivory core emblem with Caelomere Celestial Core wordmark on black.</desc>
+  <defs>
+    <radialGradient id="core" cx="42%" cy="35%" r="70%"><stop offset="0" stop-color="#FFF2B2"/><stop offset="0.26" stop-color="#E7B84B"/><stop offset="0.67" stop-color="#B67518"/><stop offset="1" stop-color="#4C2B05"/></radialGradient>
+    <linearGradient id="orbitA" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F4D684"/><stop offset="1" stop-color="#8A5B16"/></linearGradient>
+    <linearGradient id="orbitB" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#F5F0E7"/><stop offset="1" stop-color="#746443"/></linearGradient>
+    <filter id="coreGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1400" height="420" rx="34" fill="#050505"/>
+  <g transform="translate(58 44)">
+    <circle cx="166" cy="166" r="132" fill="none" stroke="#2F2413"/>
+    <ellipse cx="166" cy="166" rx="137" ry="57" fill="none" stroke="url(#orbitA)" stroke-width="9" transform="rotate(-22 166 166)"/>
+    <ellipse cx="166" cy="166" rx="126" ry="49" fill="none" stroke="url(#orbitB)" stroke-width="7" transform="rotate(55 166 166)" opacity=".86"/>
+    <ellipse cx="166" cy="166" rx="106" ry="39" fill="none" stroke="#B47C21" stroke-width="5" transform="rotate(118 166 166)" opacity=".8"/>
+    <circle cx="166" cy="166" r="53" fill="url(#core)" filter="url(#coreGlow)"/>
+    <path d="M146 127C170 143 183 158 186 180C169 166 153 158 132 156C139 146 143 137 146 127Z" fill="#F7E6AA" opacity=".75"/>
+    <circle cx="286" cy="98" r="8" fill="#F4D684"/><circle cx="52" cy="221" r="6" fill="#F5F0E7"/><circle cx="224" cy="286" r="5" fill="#B67518"/>
+  </g>
+  <g transform="translate(415 78)">
+    <text x="0" y="80" fill="#F5F0E7" font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="600" letter-spacing="7">CAELOMERE</text>
+    <text x="3" y="154" fill="#E7B84B" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800" letter-spacing="13">CELESTIAL CORE</text>
+    <line x1="4" y1="189" x2="806" y2="189" stroke="#8A651F" stroke-width="1"/>
+    <text x="4" y="232" fill="#CFC8BA" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" letter-spacing="7">LISTEN · CREATE · CONNECT · PROTECT</text>
+  </g>
+</svg>
