@@ -1,4 +1,4 @@
-# Zorvian Core Backend — Next Stage
+# Caelomere Core Backend — Next Stage
 
 Working local API backend with:
 - SQLite database
