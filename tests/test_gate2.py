@@ -4,11 +4,11 @@ import tempfile
 # Configure the application before import so tests never touch production data.
 _fd, DB_PATH = tempfile.mkstemp(prefix="zorvian-gate2-", suffix=".db")
 os.close(_fd)
-os.environ["ZORVIAN_ENV"] = "test"
+os.environ["CAELOMERE_ENV"] = "test"
 os.environ["SQLITE_PATH"] = DB_PATH
 os.environ["DEV_EXPOSE_TOKENS"] = "1"
 os.environ["GUARDIAN_HASH_PEPPER"] = "gate2-test-pepper-not-production"
-os.environ["ALLOWED_ORIGINS"] = "https://zorvian.co.uk,https://www.zorvian.co.uk"
+os.environ["ALLOWED_ORIGINS"] = "https://caelomere.com,https://www.caelomere.com"
 
 from fastapi.testclient import TestClient
 from app import app
