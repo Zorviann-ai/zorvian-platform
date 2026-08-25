@@ -1,4 +1,5 @@
 import legacyWorker from "./worker.js";
+import { generateAI, providerStatus } from "./ai-router.js";
 
 const AI_MODEL = "@cf/zai-org/glm-4.7-flash";
 const JSON_HEADERS = { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" };
@@ -115,6 +116,23 @@ function leadResponse(message){
 }
 
 function cleanReply(reply){const v=String(reply||"").replace(/\\n/g,"\n").replace(/\\r/g,"").replace(/\\{2,}/g,"").trim();return INTERNAL_MARKERS.test(v)?"":v;}
-async function runAI(env,tool,message){if(tool==="receptionist")return{ok:true,reply:receptionistResponse(message),structured:true,degraded:false};if(tool==="calendar")return{ok:true,reply:calendarResponse(message),structured:true,degraded:false};if(tool==="booking")return{ok:true,reply:bookingResponse(message),structured:true,degraded:false};if(tool==="leads")return{ok:true,reply:leadResponse(message),structured:true,degraded:false};if(!env.AI||typeof env.AI.run!=="function")return{ok:false,error:"Workers AI binding is not available."};const system=TOOL_PROMPTS[tool]||TOOL_PROMPTS.ask;try{const result=await env.AI.run(AI_MODEL,{messages:[{role:"system",content:system},{role:"user",content:message}],max_completion_tokens:700,temperature:0.1,top_p:0.8,repetition_penalty:1.12,frequency_penalty:0.35});const reply=cleanReply(extractReply(result));if(reply)return{ok:true,reply,degraded:false};}catch(error){console.error("Workers AI inference failed",error);}return{ok:false,error:"The AI model did not return a safe usable response."};}
+async function runAI(env,tool,message){if(tool==="receptionist")return{ok:true,reply:receptionistResponse(message),structured:true,degraded:false,provider:"deterministic"};if(tool==="calendar")return{ok:true,reply:calendarResponse(message),structured:true,degraded:false,provider:"deterministic"};if(tool==="booking")return{ok:true,reply:bookingResponse(message),structured:true,degraded:false,provider:"deterministic"};if(tool==="leads")return{ok:true,reply:leadResponse(message),structured:true,degraded:false,provider:"deterministic"};const system=TOOL_PROMPTS[tool]||TOOL_PROMPTS.ask;try{const generated=await generateAI(env,{system,input:message,maxOutputTokens:700,temperature:.1});const reply=cleanReply(generated.text);if(reply)return{ok:true,reply,degraded:false,provider:generated.provider,model:generated.model};}catch(error){console.error("AI providers failed",error);}return{ok:false,error:"The AI providers did not return a safe usable response."};}
 
-export default{async fetch(request,env,ctx){const url=new URL(request.url);if(url.pathname==="/api/health"&&request.method==="GET"){const user=await getUser(request,env);if(!user)return json({error:"unauthorized"},401);const aiConfigured=Boolean(env.AI&&typeof env.AI.run==="function"),dbConfigured=Boolean(env.DB);return json({ok:aiConfigured&&dbConfigured,service:"caelomere-celestial-core",displayName:"Caelomere Celestial Core",aiConfigured,dbConfigured,aiModel:AI_MODEL,time:new Date().toISOString()},aiConfigured&&dbConfigured?200:503);}if(url.pathname.startsWith("/api/ai/")&&request.method==="POST"){const user=await getUser(request,env);if(!user)return json({error:"unauthorized"},401);const requestedTool=url.pathname.slice("/api/ai/".length).replace(/\/$/,"");const tool=requestedTool==="enquiry"?"receptionist":requestedTool;if(!TOOL_PROMPTS[tool])return json({error:"unknown_ai_tool"},404);let body;try{body=await request.json();}catch{return json({error:"invalid_json"},400);}const message=String(body.message||body.command||"").trim().slice(0,8000);if(!message)return json({error:"message_required"},400);const result=await runAI(env,tool,message);if(!result.ok)return json({ok:false,tool,error:result.error},503);return json({ok:true,tool,model:AI_MODEL,reply:result.reply,degraded:Boolean(result.degraded),structured:Boolean(result.structured)});}return legacyWorker.fetch(request,env,ctx);}};
+export default{async fetch(request,env,ctx){
+  const url=new URL(request.url);
+  if(url.pathname==="/api/health"&&request.method==="GET"){
+    const user=await getUser(request,env);if(!user)return json({error:"unauthorized"},401);
+    const providers=providerStatus(env),aiConfigured=providers.openai.configured||providers.workers_ai.configured,dbConfigured=Boolean(env.DB);
+    return json({ok:aiConfigured&&dbConfigured,service:"caelomere-celestial-core",displayName:"Caelomere Celestial Core",aiConfigured,dbConfigured,aiProviders:providers,aiModel:providers.openai.configured?providers.openai.model:AI_MODEL,time:new Date().toISOString()},aiConfigured&&dbConfigured?200:503);
+  }
+  if(url.pathname.startsWith("/api/ai/")&&request.method==="POST"){
+    const user=await getUser(request,env);if(!user)return json({error:"unauthorized"},401);
+    const requestedTool=url.pathname.slice("/api/ai/".length).replace(/\/$/,"");const tool=requestedTool==="enquiry"?"receptionist":requestedTool;
+    if(!TOOL_PROMPTS[tool])return json({error:"unknown_ai_tool"},404);
+    let body;try{body=await request.json();}catch{return json({error:"invalid_json"},400);}
+    const message=String(body.message||body.command||"").trim().slice(0,8000);if(!message)return json({error:"message_required"},400);
+    const result=await runAI(env,tool,message);if(!result.ok)return json({ok:false,tool,error:result.error},503);
+    return json({ok:true,tool,model:result.model||AI_MODEL,ai_provider:result.provider,reply:result.reply,degraded:Boolean(result.degraded),structured:Boolean(result.structured)});
+  }
+  return legacyWorker.fetch(request,env,ctx);
+}};
