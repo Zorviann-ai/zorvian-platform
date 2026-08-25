@@ -2,6 +2,7 @@ import app from './auth-reset.js';
 import { handleCRM } from './crm.js';
 import { handleMCP } from './mcp.js';
 import { handleSocial } from './social.js';
+import { handleMedia } from './media.js';
 
 async function enhanceCRM(response) {
   const type = response.headers.get('content-type') || '';
@@ -36,8 +37,8 @@ async function enhanceCRM(response) {
   if (studioButton && !byId('socialVideoStudioLink')) {
     const socialButton = document.createElement('button');
     socialButton.id = 'socialVideoStudioLink';
-    socialButton.textContent = 'Social & Video Studio';
-    socialButton.onclick = () => { location.href = '/social-studio.html'; };
+    socialButton.textContent = 'AI Media Studio';
+    socialButton.onclick = () => { location.href = '/media-studio.html'; };
     studioButton.insertAdjacentElement('afterend', socialButton);
   }
 
@@ -83,6 +84,7 @@ export default {
     if (url.pathname === '/mcp' || url.pathname === '/mcp/') return handleMCP(request, env);
     if (url.pathname.startsWith('/api/crm/')) return handleCRM(request, env);
     if (url.pathname.startsWith('/api/social/')) return handleSocial(request, env);
+    if (url.pathname.startsWith('/api/media/')) return handleMedia(request, env);
     const response = await app.fetch(request, env, ctx);
     if (request.method === 'GET' && (url.pathname === '/crm' || url.pathname === '/crm.html')) {
       return enhanceCRM(response);
