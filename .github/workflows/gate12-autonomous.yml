@@ -1,0 +1,34 @@
+name: Zorvian Gate 12 Autonomous Core Check
+
+on:
+  push:
+    branches:
+      - feature/gate12-autonomous-core
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  gate12-autonomous-core:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Zorvian
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Gate 12 autonomous Core tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m pytest tests/test_gate12_autonomous_core.py -v

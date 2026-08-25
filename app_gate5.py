@@ -5,14 +5,13 @@ Extends the existing Zorvian FastAPI app without changing the proven Gate 2-4 co
 import os
 
 from fastapi import Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import app, audit, current_user, rate_limit, require, request_fingerprint
 from intelligence.connected import ConnectedIntelligenceService, ConnectedRequest, SUPPORTED_MODULES
 from intelligence.context import WorkspaceContext
-from intelligence.executor import execute_provider, stream_openai
+from intelligence.executor import execute_provider
 from intelligence.guard import guardian_check
 from intelligence.providers import ProviderProfile, ProviderRegistry
 
@@ -76,42 +75,6 @@ def intelligence_capabilities(u=Depends(current_user)):
     }
 
 
-@app.post("/intelligence/stream")
-def intelligence_stream(d: IntelligenceRunIn, request: Request, u=Depends(current_user)):
-    require(u, "write")
-    if d.module not in SUPPORTED_MODULES:
-        raise HTTPException(422, "Unsupported Zorvian intelligence module")
-    ip, _ = request_fingerprint(request)
-    rate_limit("intelligence-stream:" + u["tenant_id"] + ":" + str(ip), 60, 3600)
-    try:
-        prompt = guardian_check(d.prompt)
-        ctx = WorkspaceContext(
-            tenant_id=u["tenant_id"],
-            user_id=u["id"],
-            role=u["role"],
-            module=d.module,
-            instructions=("Operate only inside this authenticated Zorvian workspace and module.",),
-        )
-        stream = stream_openai(prompt, ctx)
-    except PermissionError as e:
-        audit(u, "guardian_intelligence_stream_block", str(e), "warning")
-        raise HTTPException(403, str(e))
-    except RuntimeError as e:
-        audit(u, "intelligence_stream_failed", str(e), "warning")
-        raise HTTPException(502, "Intelligence provider failed safely")
-
-    audit(u, "intelligence_stream_started", f"{d.module} · {d.task}")
-    return StreamingResponse(
-        stream,
-        media_type="text/plain; charset=utf-8",
-        headers={
-            "Cache-Control": "no-store",
-            "X-Content-Type-Options": "nosniff",
-            "X-Zorvian-Stream": "1",
-        },
-    )
-
-
 @app.post("/intelligence/run")
 def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_user)):
     require(u, "write")
@@ -147,13 +110,20 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
         raise HTTPException(502, "Intelligence provider failed safely")
 
     audit(u, "intelligence_run", f"{d.module} · {d.task} · provider={result.provider}")
-    # Keep infrastructure and provider identities inside Zorvian Core. Client
-    # portals receive only the completed work and the approval state they need.
     return {
-        "status": "completed",
+        "module": result.module,
+        "capability": result.capability,
         "output": result.output,
-        "approval_required": result.human_approval_required,
-        "external_action_executed": False,
+        "confidence": result.confidence,
+        "provider": result.provider,
+        "human_approval_required": result.human_approval_required,
+        "tool_execution_allowed": result.tool_execution_allowed,
+        "provenance": {
+            "task_id": result.provenance.task_id,
+            "source_refs": list(result.provenance.source_refs),
+            "assumptions": list(result.provenance.assumptions),
+            "needs_review": result.provenance.needs_review,
+        },
     }
 
 
