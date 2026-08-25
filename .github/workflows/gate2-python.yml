@@ -1,4 +1,4 @@
-name: Zorvian Gate 2 Python Security Check
+name: Caelomere Gate 2 Python Security Check
 
 on:
   push:
@@ -31,9 +31,9 @@ jobs:
         run: python -m py_compile app.py
       - name: Gate 2 account and isolation tests
         env:
-          ZORVIAN_ENV: test
+          CAELOMERE_ENV: test
           DEV_EXPOSE_TOKENS: '1'
           GUARDIAN_HASH_PEPPER: gate2-ci-pepper-not-production
-          ALLOWED_ORIGINS: https://zorvian.co.uk,https://www.zorvian.co.uk
+          ALLOWED_ORIGINS: https://caelomere.com,https://www.caelomere.com
           PYTHONPATH: .
         run: python -m pytest -q tests/test_gate2.py
