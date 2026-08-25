@@ -36,7 +36,7 @@ test('customer portal includes a long-form television editing workspace', async 
   ]) assert.ok(html.includes(marker),marker);
   assert.ok(html.includes('/api/media/sound'));
   assert.ok(html.includes('/media/productions'));
-  assert.ok(html.includes("credentials:'same-origin'"));
+  assert.ok(html.includes("credentials:\"same-origin\""));
   assert.ok(html.includes('localStorage'));
 });
 
