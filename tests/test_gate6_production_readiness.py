@@ -8,19 +8,19 @@ from deployment.readiness import readiness_report
 
 def valid_env(name="staging", db_id="staging-db"):
     return {
-        "ZORVIAN_ENV": name,
-        "ZORVIAN_ENVIRONMENT_ID": name + "-environment",
-        "ZORVIAN_DATABASE_ID": db_id,
+        "CAELOMERE_ENV": name,
+        "CAELOMERE_ENVIRONMENT_ID": name + "-environment",
+        "CAELOMERE_DATABASE_ID": db_id,
         "SQLITE_PATH": "/data/zorvian/" + name + ".db",
         "GUARDIAN_HASH_PEPPER": "p" * 48,
-        "ALLOWED_ORIGINS": "https://" + name + ".zorvian.co.uk",
-        "PUBLIC_APP_URL": "https://" + name + ".zorvian.co.uk",
+        "ALLOWED_ORIGINS": "https://" + name + ".caelomere.com",
+        "PUBLIC_APP_URL": "https://" + name + ".caelomere.com",
         "SMTP_HOST": "smtp.example.test",
         "SMTP_USERNAME": "zorvian",
         "SMTP_PASSWORD": "not-a-real-secret",
         "SMTP_FROM": "test@example.test",
-        "ZORVIAN_AI_ADAPTER_URL": "https://adapter.example.test/run",
-        "ZORVIAN_AI_ADAPTER_KEY": "k" * 32,
+        "CAELOMERE_AI_ADAPTER_URL": "https://adapter.example.test/run",
+        "CAELOMERE_AI_ADAPTER_KEY": "k" * 32,
     }
 
 
@@ -41,10 +41,10 @@ def test_public_url_must_be_explicit_https_and_allowed():
     del env["PUBLIC_APP_URL"]
     assert readiness_report(env)["ready"] is False
     env = valid_env()
-    env["PUBLIC_APP_URL"] = "http://staging.zorvian.co.uk"
+    env["PUBLIC_APP_URL"] = "http://staging.caelomere.com"
     assert readiness_report(env)["ready"] is False
     env = valid_env()
-    env["PUBLIC_APP_URL"] = "https://other.zorvian.co.uk"
+    env["PUBLIC_APP_URL"] = "https://other.caelomere.com"
     assert readiness_report(env)["ready"] is False
 
 
@@ -58,8 +58,8 @@ def test_ephemeral_database_paths_are_rejected():
 def test_staging_and_production_identifiers_must_be_distinct():
     staging = valid_env("staging", "zorvian-staging-db")
     production = valid_env("production", "zorvian-production-db")
-    assert staging["ZORVIAN_ENVIRONMENT_ID"] != production["ZORVIAN_ENVIRONMENT_ID"]
-    assert staging["ZORVIAN_DATABASE_ID"] != production["ZORVIAN_DATABASE_ID"]
+    assert staging["CAELOMERE_ENVIRONMENT_ID"] != production["CAELOMERE_ENVIRONMENT_ID"]
+    assert staging["CAELOMERE_DATABASE_ID"] != production["CAELOMERE_DATABASE_ID"]
     assert staging["SQLITE_PATH"] != production["SQLITE_PATH"]
 
 
@@ -82,8 +82,8 @@ def test_first_party_adapter_is_authenticated_and_guarded():
 
 
 def test_first_party_adapter_rejects_bad_key_and_blocks_injection(monkeypatch):
-    monkeypatch.setenv("ZORVIAN_AI_ADAPTER_KEY", "k" * 32)
-    monkeypatch.setenv("ZORVIAN_ENV", "test")
+    monkeypatch.setenv("CAELOMERE_AI_ADAPTER_KEY", "k" * 32)
+    monkeypatch.setenv("CAELOMERE_ENV", "test")
     from fastapi.testclient import TestClient
     from app_gate6 import app
 
@@ -109,7 +109,7 @@ def test_first_party_adapter_rejects_bad_key_and_blocks_injection(monkeypatch):
 
 
 def test_staging_email_link_verifies_once(monkeypatch):
-    monkeypatch.setenv("ZORVIAN_ENV", "test")
+    monkeypatch.setenv("CAELOMERE_ENV", "test")
     from fastapi.testclient import TestClient
     from app_gate6 import app
     from app import db, hash_password, issue_email_verification, now
