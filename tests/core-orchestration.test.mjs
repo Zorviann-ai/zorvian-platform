@@ -10,7 +10,7 @@ test('production Worker wires the unified Celestial Core',async()=>{
 
 test('Core exposes all requested AI services and approval controls',async()=>{
   const source=await fs.readFile(new URL('../src/core.js',import.meta.url),'utf8');
-  for(const service of ['executive','sales','marketing','secretary','social','documents','proofreader','authors','sound','vision','economy']){
+  for(const service of ['executive','sales','marketing','secretary','social','documents','proofreader','authors','sound','vision','vehicle_sourcing','economy']){
     assert.match(source,new RegExp(service+':\\{name:'),service);
   }
   for(const route of ['/api/core/status','/api/core/run','/api/core/runs','/api/core/workers']){
@@ -20,6 +20,16 @@ test('Core exposes all requested AI services and approval controls',async()=>{
   assert.ok(source.includes("spending_limit:0"));
   assert.ok(source.includes("profit_only:true"));
   assert.ok(source.includes("loss_exposure:false"));
+});
+
+test('Club One vehicle sourcing AI is decision support only and requires approval',async()=>{
+  const source=await fs.readFile(new URL('../src/core.js',import.meta.url),'utf8');
+  for(const marker of ['Club One Vehicle Sourcing AI','DECISION: BUY / WATCH / REJECT','MAXIMUM BID','ESTIMATED LANDED COST','UK EXIT VALUE','PROJECTED GROSS MARGIN','HUMAN APPROVAL REQUIRED BEFORE ANY BID, PURCHASE, PAYMENT OR FINANCIAL COMMITMENT']){
+    assert.ok(source.includes(marker),marker);
+  }
+  assert.ok(source.includes("'vehicle_sourcing'].includes(service)"));
+  assert.ok(source.includes("'vehicle_bid'"));
+  assert.ok(source.includes("'vehicle_purchase'"));
 });
 
 test('Authors flow requires rights and creates proof, story, sound and vision handoffs',async()=>{
