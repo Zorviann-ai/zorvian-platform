@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Caelomere AI Media Studio</title>
+<style>
+:root{--ink:#111820;--gold:#d7a728;--paper:#f5f3ed;--line:#d8d5ca;--ok:#238653;--bad:#b33b3b}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 Inter,Arial,sans-serif}
+header{background:#0d1117;color:white;padding:22px clamp(18px,5vw,72px);display:flex;justify-content:space-between;align-items:center}header strong{letter-spacing:.12em}header span{color:var(--gold)}
+main{max-width:1180px;margin:auto;padding:34px 20px 80px}.hero{padding:28px 0 34px}.hero h1{font-size:clamp(34px,6vw,72px);line-height:.95;margin:0 0 18px}.hero p{max-width:760px;color:#59616a}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.card{background:white;border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 8px 30px #1111}.wide{grid-column:1/-1}
+h2{margin:0 0 16px;font-size:20px}label{display:block;font-weight:800;font-size:12px;margin:12px 0 6px}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}.full{grid-column:1/-1}
+input,select,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff;font:inherit}textarea{min-height:120px;resize:vertical}
+button{border:0;border-radius:8px;padding:12px 16px;font-weight:900;cursor:pointer;margin-top:14px;background:var(--gold);color:#111}.secondary{background:#e9e7df}.status{padding:12px;border-radius:8px;background:#eef0f1;white-space:pre-wrap;margin-top:14px;min-height:44px}.pill{display:inline-block;padding:5px 9px;border-radius:20px;background:#eee;margin:3px;font-size:11px;font-weight:800}.ok{background:#dff3e8;color:#175d3b}.bad{background:#f7dfdf;color:#8b2929}
+.item{border-top:1px solid var(--line);padding:14px 0}.item:first-child{border:0}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{margin-top:7px}
+@media(max-width:760px){.grid,.fields{grid-template-columns:1fr}.wide,.full{grid-column:auto}header{align-items:flex-start;gap:12px;flex-direction:column}}
+</style>
+</head>
+<body>
+<header><strong>CAELOMERE <span>AI</span></strong><div>MEDIA STUDIO · Caelomere Ltd</div></header>
+<main>
+<section class="hero"><h1>Sound. Vision.<br>AI-assisted production.</h1><p>Create consent-controlled avatars and voices, generate short or long-form scene plans, render multi-scene avatar video, produce downloadable sound effects, retain production history, and keep a human approval step before publishing.</p><div id="capabilities"></div></section>
+<div class="grid">
+<section class="card"><h2>Reusable avatar or voice</h2><div class="fields">
+<div><label>Name</label><input id="profileName" placeholder="Presenter One"></div>
+<div><label>Kind</label><select id="profileKind"><option value="avatar">Avatar</option><option value="voice">Voice</option></select></div>
+<div><label>Provider</label><select id="profileProvider"><option>heygen</option><option>elevenlabs</option></select></div>
+<div><label>Provider ID</label><input id="profileProviderId" placeholder="Provider avatar or voice ID"></div>
+<div class="full"><label>Description</label><input id="profileDescription" placeholder="Approved brand presenter"></div>
+<div class="full"><label><input id="consent" type="checkbox" style="width:auto"> I confirm Caelomere has permission to use this likeness or voice.</label></div>
+</div><button onclick="saveProfile()">SAVE PROFILE</button><div id="profileStatus" class="status">No profile saved yet.</div></section>
+
+<section class="card"><h2>AI sound creation</h2><label>Sound brief</label><textarea id="soundPrompt" placeholder="Warm cinematic introduction, restrained percussion, no recognisable copyrighted melody."></textarea><label>Duration in seconds (0.5–22)</label><input id="soundDuration" type="number" value="8" min=".5" max="22" step=".5"><button onclick="makeSound()">GENERATE & DOWNLOAD SOUND</button><div id="soundStatus" class="status">Sound generation uses the server-side ElevenLabs connection.</div></section>
+
+<section class="card wide"><h2>New AI-assisted production</h2><div class="fields">
+<div><label>Title</label><input id="title" placeholder="Caelomere launch film"></div>
+<div><label>Format</label><select id="format"><option value="long-video">Long video</option><option value="short-video">Short video</option><option value="social-series">Social series</option><option value="explainer">Explainer</option></select></div>
+<div><label>Duration (minutes)</label><input id="duration" type="number" value="3" min="1" max="60"></div>
+<div><label>Aspect ratio</label><select id="ratio"><option>16:9</option><option>9:16</option><option>1:1</option></select></div>
+<div><label>Avatar profile</label><select id="avatar"><option value="">Default configured avatar</option></select></div>
+<div><label>Voice profile</label><select id="voice"><option value="">Default configured voice</option></select></div>
+<div><label>Objective</label><input id="objective" placeholder="Explain the service and generate qualified enquiries"></div>
+<div><label>Audience</label><input id="audience" placeholder="UK small-business owners"></div>
+<div class="full"><label>Confirmed facts and creative brief</label><textarea id="brief" placeholder="Include only facts that are approved for publication. The AI will generate a full script, scenes, visual directions, captions and sound directions."></textarea></div>
+</div><button onclick="createProduction()">PLAN PRODUCTION</button><div id="productionStatus" class="status">Ready for a production brief.</div></section>
+
+<section class="card wide"><h2>Productions</h2><button class="secondary" onclick="loadAll()">REFRESH</button><div id="productions" class="status">Loading…</div></section>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+async function api(path,options={}){const r=await fetch('/api'+path,{credentials:'same-origin',headers:{'content-type':'application/json',...(options.headers||{})},...options});let d;try{d=await r.json()}catch{d={error:'invalid_server_response'}}if(!r.ok)throw new Error(d.error||'request_failed');return d}
+function message(id,text,ok=true){const el=$(id);el.textContent=text;el.style.color=ok?'#175d3b':'#8b2929'}
+async function status(){try{const d=await api('/media/status');$('capabilities').innerHTML=d.capabilities.map(x=>'<span class="pill ok">'+x+'</span>').join('')+Object.entries({AI:d.ai,HeyGen:d.heygen,ElevenLabs:d.elevenlabs,'Long video':d.long_video}).map(([k,v])=>'<span class="pill '+(v?'ok':'bad')+'">'+k+': '+(v?'ready':'needs configuration')+'</span>').join('')}catch(e){$('capabilities').innerHTML='<span class="pill bad">'+e.message+'</span>'}}
+async function loadProfiles(){try{const d=await api('/media/profiles');for(const kind of ['avatar','voice']){const s=$(kind);s.innerHTML='<option value="">Default configured '+kind+'</option>'+d.items.filter(x=>x.kind===kind).map(x=>'<option value="'+x.id+'">'+x.name+' · '+x.provider+'</option>').join('')}}catch{}}
+async function saveProfile(){try{const d=await api('/media/profiles',{method:'POST',body:JSON.stringify({name:$('profileName').value,kind:$('profileKind').value,provider:$('profileProvider').value,provider_id:$('profileProviderId').value,description:$('profileDescription').value,consent_confirmed:$('consent').checked})});message('profileStatus','Saved profile '+d.id);await loadProfiles()}catch(e){message('profileStatus',e.message,false)}}
+async function makeSound(){const s=$('soundStatus');message('soundStatus','Generating sound…');try{const r=await fetch('/api/media/sound',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:$('soundPrompt').value,duration_seconds:Number($('soundDuration').value)})});if(!r.ok){const d=await r.json();throw new Error(d.error||'sound_failed')}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='caelomere-ai-sound.mp3';a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);message('soundStatus','Sound generated and downloaded. Review licensing and suitability before use.')}catch(e){message('soundStatus',e.message,false)}}
+async function createProduction(){try{message('productionStatus','AI is planning the complete script and scenes…');const d=await api('/media/productions',{method:'POST',body:JSON.stringify({title:$('title').value,format:$('format').value,duration_minutes:Number($('duration').value),aspect_ratio:$('ratio').value,avatar_profile_id:$('avatar').value,voice_profile_id:$('voice').value,objective:$('objective').value,audience:$('audience').value,brief:$('brief').value})});message('productionStatus','Planned '+d.scene_count+' scenes. Production ID: '+d.id);await loadProductions()}catch(e){message('productionStatus',e.message,false)}}
+async function render(id){try{await api('/media/productions/'+id+'/render',{method:'POST',body:'{}'});await loadProductions()}catch(e){alert(e.message)}}
+async function refresh(id){try{await api('/media/productions/'+id+'/refresh',{method:'POST',body:'{}'});await loadProductions()}catch(e){alert(e.message)}}
+async function view(id){try{const d=await api('/media/productions/'+id);alert(d.scenes.map(x=>x.position+'. '+x.title+'\n'+x.narration).join('\n\n'))}catch(e){alert(e.message)}}
+async function loadProductions(){try{const d=await api('/media/productions');$('productions').innerHTML=d.items.length?d.items.map(x=>'<div class="item"><strong>'+x.title+'</strong> · '+x.duration_minutes+' min · '+x.aspect_ratio+' · '+x.status+(x.output_url?'<br><a href="'+x.output_url+'" target="_blank" rel="noopener">Open finished video</a>':'')+'<div class="actions"><button class="secondary" onclick="view(\''+x.id+'\')">VIEW SCENES</button><button onclick="render(\''+x.id+'\')">RENDER VIDEO</button><button class="secondary" onclick="refresh(\''+x.id+'\')">REFRESH STATUS</button></div></div>').join(''):'No productions yet.'}catch(e){message('productions',e.message,false)}}
+async function loadAll(){await Promise.all([status(),loadProfiles(),loadProductions()])}loadAll();
+</script>
+</body></html>
