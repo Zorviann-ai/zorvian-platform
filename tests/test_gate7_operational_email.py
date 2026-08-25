@@ -8,12 +8,12 @@ import time
 
 _fd, DB_PATH = tempfile.mkstemp(prefix="zorvian-gate7-email-", suffix=".db")
 os.close(_fd)
-os.environ["ZORVIAN_ENV"] = "test"
+os.environ["CAELOMERE_ENV"] = "test"
 os.environ["SQLITE_PATH"] = DB_PATH
 os.environ["DEV_EXPOSE_TOKENS"] = "1"
 os.environ["GUARDIAN_HASH_PEPPER"] = "gate7-email-test-pepper"
 os.environ["RESEND_API_KEY"] = "re_test_only"
-os.environ["SMTP_FROM"] = "Zorvian <support@zorvian.co.uk>"
+os.environ["SMTP_FROM"] = "Caelomere <support@caelomere.com>"
 os.environ["RESEND_INBOUND_DOMAIN"] = "inbound.zorvian.test"
 WEBHOOK_KEY = b"gate7-test-webhook-key-32-bytes!!"
 os.environ["RESEND_WEBHOOK_SECRET"] = "whsec_" + base64.b64encode(WEBHOOK_KEY).decode()
@@ -70,7 +70,7 @@ def test_operational_email_end_to_end(monkeypatch):
     data = sent.json(); assert data["professional_html"] is True
     assert data["reply_to"].startswith("reply+")
     assert calls[0][2]["html"].find("Urban Test Ltd") >= 0
-    assert "Powered by Zorvian Core" in calls[0][2]["html"]
+    assert "Powered by Caelomere Core" in calls[0][2]["html"]
 
     event = {"type":"email.received","created_at":"2026-08-22T08:00:00Z","data":{"email_id":"provider-inbound-1","from":"Test Customer <customer@example.com>","to":[data["reply_to"]],"subject":"Re: Service update","message_id":"<inbound-1@example.com>","attachments":[]}}
     raw = json.dumps(event, separators=(",",":")).encode()
