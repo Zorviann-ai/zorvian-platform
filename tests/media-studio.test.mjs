@@ -14,12 +14,30 @@ test('AI Media Studio backend exposes the complete protected production surface'
   assert.doesNotMatch(source,/sk-[A-Za-z0-9_-]{20}/);
 });
 
-test('AI Media Studio frontend includes profiles, sound and long video controls', async () => {
+test('customer portal includes a long-form television editing workspace', async () => {
   const html=await fs.readFile(new URL('../public/media-studio.html',import.meta.url),'utf8');
-  for(const marker of ['Reusable avatar or voice','AI sound creation','New AI-assisted production','Duration (minutes)','consent','GENERATE & DOWNLOAD SOUND','RENDER VIDEO']) assert.ok(html.includes(marker),marker);
+  for(const marker of [
+    'AI Film & Television Editor',
+    'PRODUCTION LIBRARY',
+    'SCENE INSPECTOR',
+    'TIMELINE',
+    'V1 · PICTURE',
+    'A1 · DIALOGUE',
+    'A2 · MUSIC / SFX',
+    'T1 · CAPTIONS',
+    'Start a production',
+    'Feature / long-form',
+    'TV episode',
+    'Documentary',
+    '60 minutes',
+    'Consented avatars & voices',
+    'RENDER PRODUCTION',
+    'EXPORT PLAN'
+  ]) assert.ok(html.includes(marker),marker);
   assert.ok(html.includes('/api/media/sound'));
   assert.ok(html.includes('/media/productions'));
   assert.ok(html.includes("credentials:'same-origin'"));
+  assert.ok(html.includes('localStorage'));
 });
 
 test('production Worker routes media APIs and links the studio', async () => {
