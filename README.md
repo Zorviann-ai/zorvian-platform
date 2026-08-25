@@ -44,3 +44,10 @@ credentials and commercial permissions are connected.
 - `caelomere.co.uk` may be used as a redirect or domain alias.
 
 Legacy internal identifiers such as database names, Worker names and session-cookie names remain unchanged during the rebrand so existing deployments and user sessions are not broken.
+
+## Public contact addresses
+
+- General enquiries: **hello@caelomere.com**
+- Customer support: **support@caelomere.com**
+
+Authentication, password reset, billing and other security-sensitive messages should use separately controlled transactional sender addresses rather than either public inbox.
