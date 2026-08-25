@@ -50,10 +50,17 @@ def test_docker_preserves_gate5_and_keeps_secrets_out_of_browser_bundle():
     docker = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     js = (ROOT / "beta" / "modules" / "demo.js").read_text(encoding="utf-8")
     assert "COPY app.py app_gate5.py" in docker
-    assert "uvicorn app_gate5:app" in docker or "uvicorn app_gate6:app" in docker
-    if "uvicorn app_gate6:app" in docker:
-        successor = (ROOT / "app_gate6.py").read_text(encoding="utf-8")
-        assert "from app_gate5 import app" in successor
+    entrypoints = [5, 6, 7, 8, 9, 10, 11]
+    active = next((n for n in reversed(entrypoints) if f"uvicorn app_gate{n}:app" in docker), None)
+    assert active is not None
+    for n in range(active, 5, -1):
+        successor = (ROOT / f"app_gate{n}.py").read_text(encoding="utf-8")
+        previous = f"app_gate{n-1}"
+        assert (
+            f"from {previous} import app" in successor
+            or f"import {previous} as" in successor
+            or f"import {previous}\n" in successor
+        )
     assert "COPY beta ./beta" in docker
     assert "ZORVIAN_AI_ADAPTER_KEY" not in js
     assert "fetch('/intelligence/run'" in js

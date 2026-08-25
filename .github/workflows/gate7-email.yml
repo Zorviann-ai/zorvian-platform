@@ -1,0 +1,48 @@
+name: Zorvian Gate 7 Operational Email
+
+on:
+  push:
+    branches: [main, feature/branded-core-email, feature/gate7-email-centre]
+    paths:
+      - 'app_gate7.py'
+      - 'app_gate8.py'
+      - 'app_gate9.py'
+      - 'app_gate10.py'
+      - 'app_gate11.py'
+      - 'email_branding.py'
+      - 'Dockerfile'
+      - 'tests/test_gate7_operational_email.py'
+      - 'tests/test_gate7_email_centre.py'
+      - '.github/workflows/gate7-email.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app_gate7.py'
+      - 'app_gate8.py'
+      - 'app_gate9.py'
+      - 'app_gate10.py'
+      - 'app_gate11.py'
+      - 'email_branding.py'
+      - 'Dockerfile'
+      - 'tests/test_gate7_operational_email.py'
+      - 'tests/test_gate7_email_centre.py'
+      - '.github/workflows/gate7-email.yml'
+
+jobs:
+  gate7-operational-email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile Gate 7 email layer
+        run: python -m py_compile app_gate8.py app_gate9.py app_gate10.py app_gate11.py email_branding.py
+      - name: Run Gate 7 operational email acceptance test
+        run: python -m pytest -q tests/test_gate7_operational_email.py
+      - name: Run Gate 7 Email Centre acceptance test
+        run: python -m pytest -q tests/test_gate7_email_centre.py

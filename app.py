@@ -4,10 +4,10 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
-import sqlite3, uuid, hashlib, secrets, datetime, os, re, smtplib, ssl, base64, hmac, struct, time, json, urllib.request, urllib.error
+import sqlite3, uuid, hashlib, secrets, datetime, os, re, smtplib, ssl, base64, hmac, struct, time, json, urllib.request, urllib.error, urllib.parse
 from email.message import EmailMessage
 
-APP_VERSION="0.9.0"
+APP_VERSION="1.1.0"
 ENV=os.getenv("ZORVIAN_ENV","production").lower()
 DB=os.getenv("SQLITE_PATH",os.path.join(os.path.dirname(__file__),"zorvian.db"))
 SESSION_HOURS=int(os.getenv("SESSION_HOURS","12")); LOCKOUT_MINUTES=int(os.getenv("LOCKOUT_MINUTES","15")); MAX_FAILED_LOGINS=int(os.getenv("MAX_FAILED_LOGINS","5"))
@@ -37,6 +37,7 @@ def init_db():
  CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,tenant_id TEXT,type TEXT,recipient TEXT,body TEXT,status TEXT,created_at TEXT);
  CREATE TABLE IF NOT EXISTS campaigns(id TEXT PRIMARY KEY,tenant_id TEXT,channel TEXT,goal TEXT,audience TEXT,content TEXT,mode TEXT,status TEXT,created_at TEXT);
  CREATE TABLE IF NOT EXISTS routes(id TEXT PRIMARY KEY,tenant_id TEXT,start TEXT,end TEXT,mode TEXT,notes TEXT,status TEXT,created_at TEXT);
+ CREATE TABLE IF NOT EXISTS journeys(id TEXT PRIMARY KEY,tenant_id TEXT,journey_type TEXT,origin TEXT,destination TEXT,date TEXT,time TEXT,travellers TEXT,budget TEXT,transport TEXT,selected_place TEXT,preferences TEXT,plan TEXT,status TEXT,created_at TEXT);
  CREATE TABLE IF NOT EXISTS freight_jobs(id TEXT PRIMARY KEY,tenant_id TEXT,ref TEXT,collection TEXT,delivery TEXT,vehicle TEXT,notes TEXT,status TEXT,created_at TEXT);
  CREATE TABLE IF NOT EXISTS video_projects(id TEXT PRIMARY KEY,tenant_id TEXT,project TEXT,source TEXT,output TEXT,brief TEXT,plan TEXT,status TEXT,created_at TEXT);
  CREATE TABLE IF NOT EXISTS freshx_opportunities(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,product TEXT,owner TEXT,market TEXT,stage TEXT,notes TEXT,readiness INTEGER,status TEXT NOT NULL,created_at TEXT NOT NULL);
@@ -52,6 +53,7 @@ def init_db():
  """)
  for d in ["display_name TEXT","email_verified INTEGER NOT NULL DEFAULT 0","mfa_secret TEXT","mfa_enabled INTEGER NOT NULL DEFAULT 0","status TEXT NOT NULL DEFAULT 'active'","failed_attempts INTEGER NOT NULL DEFAULT 0","locked_until TEXT","last_login_at TEXT","password_changed_at TEXT"]: add_column(c,"users",d)
  for d in ["slug TEXT","status TEXT NOT NULL DEFAULT 'active'","plan TEXT NOT NULL DEFAULT 'gate2'","owner_user_id TEXT"]: add_column(c,"tenants",d)
+ for d in ["duration TEXT NOT NULL DEFAULT '60 minutes'","timezone TEXT NOT NULL DEFAULT 'Europe/London'"]: add_column(c,"bookings",d)
  if ENV=="production": cur.execute("UPDATE users SET status='disabled' WHERE email='admin@zorvian.local'")
  c.commit(); c.close()
 init_db()
@@ -132,11 +134,13 @@ class InviteIn(BaseModel): email:str; role:str="staff"
 class AcceptInviteIn(BaseModel): token:str; name:str; password:str
 class ContactIn(BaseModel): name:str; contact:str; need:str=""; source:str="manual"
 class ReceptionIn(BaseModel): name:str; contact:str; text:str; language:str="English"
-class BookingIn(BaseModel): contact_id:str; type:str="Appointment"; date:str; time:str; reminder:str="24 hours before"
+class BookingIn(BaseModel): contact_id:str; type:str="Appointment"; date:str; time:str; reminder:str="24 hours before"; duration:str="60 minutes"; timezone:str="Europe/London"
 class TaskIn(BaseModel): title:str; owner:str="Team"; due:str=""
 class DocumentIn(BaseModel): type:str; recipient:str; facts:str
 class CampaignIn(BaseModel): channel:str; goal:str; audience:str=""; message:str; mode:str="Approval required"
 class RouteIn(BaseModel): start:str; end:str; mode:str; notes:str=""
+class JourneyIn(BaseModel):
+ journey_type:str; origin:str=""; destination:str; date:str; time:str; travellers:str="1"; budget:str=""; transport:str="Mixed"; selected_place:str=""; preferences:str=""; plan:str=""
 class FreightIn(BaseModel): ref:str; collection:str; delivery:str; vehicle:str; notes:str=""
 class VideoIn(BaseModel): project:str; source:str; output:str; brief:str
 class FreshXIn(BaseModel): product:str; owner:str; market:str; stage:str="Qualification"; notes:str=""
@@ -248,7 +252,7 @@ def add_booking(d:BookingIn,u=Depends(current_user)):
  if not contact: c.close(); raise HTTPException(404,"Contact not found")
  dup=c.execute("SELECT id FROM bookings WHERE tenant_id=? AND contact_id=? AND date=? AND time=? AND status!='Cancelled'",(u["tenant_id"],d.contact_id,d.date,d.time)).fetchone()
  if dup: c.close(); raise HTTPException(409,"Duplicate booking")
- bid=str(uuid.uuid4()); c.execute("INSERT INTO bookings VALUES (?,?,?,?,?,?,?,?,?)",(bid,u["tenant_id"],d.contact_id,d.type,d.date,d.time,d.reminder,"Confirmed",now())); c.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",(str(uuid.uuid4()),u["tenant_id"],f"Send booking confirmation to {contact['name']}","Automation",d.date,"Open",now())); c.commit(); c.close(); audit(u,"booking_created",f"{contact['name']} · {d.date} {d.time}"); return {"id":bid,"status":"Confirmed","notification":"queued_internal"}
+ bid=str(uuid.uuid4()); c.execute("INSERT INTO bookings(id,tenant_id,contact_id,type,date,time,reminder,status,created_at,duration,timezone) VALUES (?,?,?,?,?,?,?,?,?,?,?)",(bid,u["tenant_id"],d.contact_id,d.type,d.date,d.time,d.reminder,"Confirmed",now(),d.duration,d.timezone)); c.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",(str(uuid.uuid4()),u["tenant_id"],f"Send booking confirmation to {contact['name']}","Automation",d.date,"Open",now())); c.commit(); c.close(); audit(u,"booking_created",f"{contact['name']} · {d.date} {d.time} · {d.duration} · {d.timezone}"); return {"id":bid,"status":"Confirmed","duration":d.duration,"timezone":d.timezone,"notification":"queued_internal"}
 @app.get("/tasks")
 def tasks(u=Depends(current_user)):
  c=db(); rows=c.execute("SELECT * FROM tasks WHERE tenant_id=? ORDER BY created_at DESC",(u["tenant_id"],)).fetchall(); c.close(); return [dict(x) for x in rows]
@@ -266,6 +270,65 @@ def approve_document(doc_id:str,u=Depends(current_user)):
 @app.post("/campaigns")
 def add_campaign(d:CampaignIn,u=Depends(current_user)):
  require(u,"write"); content=f"CAMPAIGN: {d.goal}\n\nCHANNEL\n{d.channel}\n\nAUDIENCE\n{d.audience}\n\nMESSAGE\n{d.message}\n\nCALL TO ACTION\nBook, enquire or contact us."; cid=str(uuid.uuid4()); c=db(); c.execute("INSERT INTO campaigns VALUES (?,?,?,?,?,?,?,?,?)",(cid,u["tenant_id"],d.channel,d.goal,d.audience,content,d.mode,"Draft",now())); c.commit(); c.close(); audit(u,"campaign_created",d.goal); return {"id":cid,"content":content,"status":"Draft"}
+
+UK_AIRPORTS=[
+ ("LHR","EGLL","London Heathrow","London"),("LGW","EGKK","London Gatwick","London"),("STN","EGSS","London Stansted","London"),("LTN","EGGW","London Luton","London"),("LCY","EGLC","London City","London"),("SEN","EGMC","London Southend","Southend"),
+ ("MAN","EGCC","Manchester","Manchester"),("BHX","EGBB","Birmingham","Birmingham"),("BRS","EGGD","Bristol","Bristol"),("EMA","EGNX","East Midlands","Derby"),("LPL","EGGP","Liverpool John Lennon","Liverpool"),("LBA","EGNM","Leeds Bradford","Leeds"),("NCL","EGNT","Newcastle","Newcastle"),
+ ("EDI","EGPH","Edinburgh","Edinburgh"),("GLA","EGPF","Glasgow","Glasgow"),("ABZ","EGPD","Aberdeen","Aberdeen"),("INV","EGPE","Inverness","Inverness"),("PIK","EGPK","Glasgow Prestwick","Prestwick"),("DND","EGPN","Dundee","Dundee"),
+ ("BFS","EGAA","Belfast International","Belfast"),("BHD","EGAC","George Best Belfast City","Belfast"),("CWL","EGFF","Cardiff","Cardiff"),("BOH","EGHH","Bournemouth","Bournemouth"),("EXT","EGTE","Exeter","Exeter"),("SOU","EGHI","Southampton","Southampton"),
+ ("NWI","EGSH","Norwich","Norwich"),("NQY","EGHQ","Cornwall Newquay","Newquay"),("MME","EGNV","Teesside International","Darlington"),("HUY","EGNJ","Humberside","Humberside"),("LSI","EGPB","Sumburgh","Shetland"),("KOI","EGPA","Kirkwall","Orkney"),
+ ("SYY","EGPO","Stornoway","Stornoway"),("BEB","EGPL","Benbecula","Benbecula"),("BRR","EGPR","Barra","Barra"),("TRE","EGPU","Tiree","Tiree"),("ILY","EGPI","Islay","Islay"),("CAL","EGEC","Campbeltown","Campbeltown"),("WIC","EGPC","Wick John O Groats","Wick"),
+ ("BLK","EGNH","Blackpool","Blackpool"),("DSA","EGCN","Doncaster Sheffield","Doncaster"),("GLO","EGBJ","Gloucestershire","Gloucester"),("FAB","EGLF","Farnborough","Farnborough"),("LYX","EGMD","London Ashford Lydd","Lydd"),("LEQ","EGHC","Land's End","Penzance"),
+ ("ISC","EGHE","St Mary's Isles of Scilly","Isles of Scilly"),("OBN","EGEO","Oban","Oban"),("PPW","EGEP","Papa Westray","Orkney"),("WRY","EGEW","Westray","Orkney"),("NRL","EGEN","North Ronaldsay","Orkney"),("EOI","EGED","Eday","Orkney")
+]
+
+def fsa_places(location,category,max_results):
+ params=urllib.parse.urlencode({"address":location,"pageSize":min(max(max_results*3,10),100),"pageNumber":1})
+ req=urllib.request.Request("https://api.ratings.food.gov.uk/Establishments?"+params,headers={"x-api-version":"2","Accept":"application/json","User-Agent":"Zorvian/1.0"})
+ try:
+  with urllib.request.urlopen(req,timeout=12) as response: data=json.loads(response.read().decode("utf-8"))
+ except Exception as exc:
+  raise HTTPException(502,"UK venue directory is temporarily unavailable") from exc
+ wanted_hotel=category=="hotel"
+ results=[]
+ for item in data.get("establishments",[]):
+  business_type=str(item.get("BusinessType",""))
+  is_hotel=any(term in business_type.lower() for term in ("hotel","bed & breakfast","guest house"))
+  is_food=any(term in business_type.lower() for term in ("restaurant","cafe","canteen","pub","bar","takeaway","sandwich"))
+  if category=="hotel" and not is_hotel: continue
+  if category=="restaurant" and not is_food: continue
+  if category=="all" and not (is_hotel or is_food): continue
+  address=", ".join(str(item.get(k,"")).strip() for k in ("AddressLine1","AddressLine2","AddressLine3","AddressLine4","PostCode") if str(item.get(k,"")).strip())
+  geocode=item.get("geocode") or {}
+  results.append({"id":str(item.get("FHRSID","")),"name":item.get("BusinessName","Unknown venue"),"category":"hotel" if is_hotel else "restaurant","type":business_type,"address":address,"postcode":item.get("PostCode",""),"rating":item.get("RatingValue",""),"latitude":geocode.get("latitude"),"longitude":geocode.get("longitude"),"source":"UK Food Standards Agency"})
+  if len(results)>=max_results: break
+ return results
+
+@app.get("/places/search")
+def search_places(category:str="all",location:str="",max_results:int=20,u=Depends(current_user)):
+ category=category.strip().lower()
+ if category not in ("all","restaurant","hotel","airport"): raise HTTPException(400,"Choose restaurant, hotel, airport or all")
+ if not location.strip(): raise HTTPException(400,"Enter a UK town, city, postcode or airport")
+ limit=min(max(max_results,1),40); results=[]
+ if category in ("all","restaurant","hotel"): results.extend(fsa_places(location.strip(),category,limit))
+ if category in ("all","airport"):
+  query=location.strip().lower()
+  airports=[{"id":iata,"name":name+" Airport","category":"airport","type":"UK airport","address":city+", United Kingdom","postcode":"","rating":"","iata":iata,"icao":icao,"source":"UK airport directory"} for iata,icao,name,city in UK_AIRPORTS if query in (iata+" "+icao+" "+name+" "+city).lower()]
+  if not airports and category=="all": airports=[{"id":iata,"name":name+" Airport","category":"airport","type":"UK airport","address":city+", United Kingdom","postcode":"","rating":"","iata":iata,"icao":icao,"source":"UK airport directory"} for iata,icao,name,city in UK_AIRPORTS[:8]]
+  results.extend(airports[:limit])
+ return {"query":{"category":category,"location":location},"count":len(results[:limit]),"results":results[:limit],"provider_status":{"restaurants":"live_fsa","food_serving_hotels":"live_fsa","airports":"uk_directory","hotel_rooms":"provider_required","external_booking":"provider_required"}}
+
+@app.get("/journeys")
+def list_journeys(u=Depends(current_user)):
+ c=db(); rows=c.execute("SELECT * FROM journeys WHERE tenant_id=? ORDER BY created_at DESC",(u["tenant_id"],)).fetchall(); c.close(); return [dict(r) for r in rows]
+
+@app.post("/journeys",status_code=201)
+def add_journey(d:JourneyIn,u=Depends(current_user)):
+ require(u,"write"); jid=str(uuid.uuid4()); status="Approved plan"
+ c=db(); c.execute("INSERT INTO journeys VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(jid,u["tenant_id"],d.journey_type,d.origin,d.destination,d.date,d.time,d.travellers,d.budget,d.transport,d.selected_place,d.preferences,d.plan,status,now())); c.commit(); c.close()
+ audit(u,"journey_plan_approved",f"{d.origin} → {d.destination}")
+ return {"id":jid,"status":status,"destination":d.destination,"selected_place":d.selected_place,"external_booking":"not_completed","provider_status":"connection_required"}
+
 @app.post("/routes")
 def add_route(d:RouteIn,u=Depends(current_user)):
  require(u,"write"); rid=str(uuid.uuid4()); c=db(); c.execute("INSERT INTO routes VALUES (?,?,?,?,?,?,?,?)",(rid,u["tenant_id"],d.start,d.end,d.mode,d.notes,"Planned locally",now())); c.commit(); c.close(); audit(u,"route_created",f"{d.start} → {d.end}"); return {"id":rid,"status":"Planned locally","live_mapping":"not_connected"}

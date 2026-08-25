@@ -13,8 +13,13 @@ from .router import IntelligenceRequest, route
 
 
 SUPPORTED_MODULES = {
-    "receptionist", "zai-auto", "freshx", "tenders",
-    "lead-intelligence", "document-studio", "business-control", "route-intelligence",
+    "receptionist", "executive-assistant", "calendar-bookings", "reservations",
+    "zai-auto", "freshx", "tenders", "lead-intelligence", "social-ai",
+    "marketing", "sales-quotes", "customer-support", "tasks-workflow",
+    "business-intelligence", "document-studio", "document-proof",
+    "business-control", "route-intelligence", "freight-control", "robotics",
+    "video-ai", "legal-pathways", "finance-pathways", "mailbox-communications",
+    "guardian-security",
 }
 
 
@@ -67,8 +72,18 @@ class ConnectedIntelligenceService:
             needs_retrieval=req.needs_retrieval,
             high_risk=decision.risk.value == "high",
         )
-        provider = self.registry.select(requirements)
-        result = self.executor(provider.name, req.prompt, ctx)
+        failures = []
+        result = None
+        provider = None
+        for candidate in self.registry.eligible(requirements):
+            try:
+                result = self.executor(candidate.name, req.prompt, ctx)
+                provider = candidate
+                break
+            except RuntimeError:
+                failures.append(candidate.name)
+        if result is None or provider is None:
+            raise RuntimeError("All approved intelligence providers failed safely: " + ", ".join(failures))
         text = str(result.get("output", "")).strip()
         if not text:
             raise RuntimeError("Provider returned no usable output")

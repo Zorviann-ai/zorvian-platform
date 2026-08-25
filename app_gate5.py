@@ -12,7 +12,14 @@ from intelligence.executor import execute_provider
 from intelligence.guard import guardian_check
 from intelligence.providers import ProviderProfile, ProviderRegistry
 
-_ALL_CAPABILITIES = frozenset({"communications", "automotive", "fresh-produce", "contracts-tenders", "growth", "documents", "operations", "mobility"})
+
+_ALL_CAPABILITIES = frozenset({
+    "communications", "executive-operations", "scheduling", "automotive",
+    "fresh-produce", "contracts-tenders", "growth", "marketing-content",
+    "sales-commercial", "operations", "analytics", "documents",
+    "document-assurance", "mobility", "automation-safety", "media-production",
+    "legal-workflow", "finance-workflow", "security-analysis",
+})
 
 def _ox_configured():
     return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
@@ -23,8 +30,15 @@ def _registry():
         # Ox is primary for normal reasoning. While its provider is anonymous,
         # high-risk work remains on the controlled path and approval-gated.
         profiles.insert(0, ProviderProfile("ox-alpha", _ALL_CAPABILITIES, True, True, False, 8, 1, True))
+    profiles = []
+    if os.getenv("OPENAI_API_KEY"):
+        profiles.append(ProviderProfile("openai", _ALL_CAPABILITIES, True, True, True, 10, 20, True))
+    if os.getenv("ANTHROPIC_API_KEY"):
+        profiles.append(ProviderProfile("anthropic", _ALL_CAPABILITIES, True, True, True, 12, 22, True))
     if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
-        profiles.insert(0, ProviderProfile("zorvian-remote", _ALL_CAPABILITIES, True, True, True, 10, 20, True))
+        profiles.append(ProviderProfile("zorvian-remote", _ALL_CAPABILITIES, True, True, True, 15, 25, True))
+    if os.getenv("ALLOW_LOCAL_BETA", "1") == "1":
+        profiles.append(ProviderProfile("zorvian-local-beta", _ALL_CAPABILITIES, True, True, True, 90, 1, True))
     return ProviderRegistry(profiles)
 
 def _service():
@@ -48,13 +62,30 @@ async def gate5_beta_csp(request, call_next):
 
 @app.get("/intelligence/capabilities")
 def intelligence_capabilities(u=Depends(current_user)):
-    if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
-        mode = "approved-remote"
-    elif _ox_configured():
-        mode = "ox-alpha-primary"
-    else:
-        mode = "controlled-local-beta"
-    return {"modules": sorted(SUPPORTED_MODULES), "guardian": "active", "provider_mode": mode, "external_actions": "approval-gated"}
+configured = []
+if os.getenv("OPENAI_API_KEY"):
+    configured.append("openai")
+if os.getenv("ANTHROPIC_API_KEY"):
+    configured.append("anthropic")
+
+if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
+    configured.append("private-adapter")
+    mode = "approved-remote"
+elif _ox_configured():
+    configured.append("ox-alpha")
+    mode = "ox-alpha-primary"
+elif configured:
+    mode = "connected"
+else:
+    mode = "controlled-local-beta"
+
+return {
+    "modules": sorted(SUPPORTED_MODULES),
+    "guardian": "active",
+    "provider_mode": mode,
+    "configured_provider_count": len(configured),
+    "external_actions": "approval-gated",
+}
 
 @app.post("/intelligence/run")
 def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_user)):
