@@ -1,6 +1,7 @@
 import { handleSocial } from './social.js';
 import { handleMedia } from './media.js';
 import { handleAuthors } from './authors.js';
+import { generateAI, providerStatus } from './ai-router.js';
 
 const H={"content-type":"application/json; charset=UTF-8","cache-control":"no-store"};
 const MODEL='@cf/zai-org/glm-4.7-flash';
@@ -65,7 +66,6 @@ const PROMPTS={
 };
 
 async function genericRun(env,service,instruction,context){
-  if(!env.AI||typeof env.AI.run!=='function')throw new Error('ai_unavailable');
   const system=`${PROMPTS[service]||PROMPTS.executive}
 
 Core rules:
@@ -75,13 +75,10 @@ Core rules:
 - Never claim an email, post, booking, payment, call, render or external action happened unless a connected provider returned confirmation.
 - Publishing, sending, payments, signatures and release of media require human approval.
 - Autonomous profit workers have a zero spending limit. They may prepare saleable deliverables and qualified opportunities only. They may not spend, borrow, trade, purchase stock, sign, promise returns or create a possible loss.`;
-  const result=await env.AI.run(MODEL,{messages:[
-    {role:'system',content:system},
-    {role:'user',content:`${instruction}\n\nAvailable context:\n${JSON.stringify(context||{})}`}
-  ],max_completion_tokens:2200,temperature:.15,top_p:.82});
-  const output=text(result);
+  const result=await generateAI(env,{system,input:`${instruction}\n\nAvailable context:\n${JSON.stringify(context||{})}`,maxOutputTokens:2200,temperature:.15});
+  const output=result.text;
   if(!output)throw new Error('empty_ai_result');
-  return output;
+  return {...result,text:output};
 }
 
 function internalRequest(request,path,body){
@@ -139,12 +136,12 @@ async function run(request,env,u){
   if(specialist)return specialist;
 
   try{
-    const result=await genericRun(env,service,instruction,b.context||{});
+    const generated=await genericRun(env,service,instruction,b.context||{}),result=generated.text;
     const approvalRequired=['social','marketing','secretary','documents','sound','vision'].includes(service);
     const id=uid();
     await env.DB.prepare('INSERT INTO core_runs(id,tenant_id,user_id,service,instruction,result,status,approval_required,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
       .bind(id,tenant(u),u.id,service,instruction,result,'prepared',approvalRequired?1:0,now()).run();
-    return json({ok:true,id,service,agent:SERVICES[service],result,status:'prepared',approval_required:approvalRequired,external_actions_executed:false});
+    return json({ok:true,id,service,agent:SERVICES[service],result,ai_provider:generated.provider,ai_model:generated.model,status:'prepared',approval_required:approvalRequired,external_actions_executed:false});
   }catch(error){
     console.error(JSON.stringify({event:'core_run_failed',service,message:String(error?.message||error)}));
     return json({error:error?.message||'core_run_failed'},503);
@@ -166,13 +163,13 @@ async function runWorker(request,env,u,id){
   let b={};try{b=await request.json();}catch{return json({error:'invalid_json'},400);}
   const instruction=String(b.instruction||worker.mandate).trim().slice(0,12000);
   try{
-    const result=await genericRun(env,'economy',instruction,{worker:{name:worker.name,mandate:worker.mandate,target_market:worker.target_market,offer:worker.offer},rule:'Zero spending. Positive expected net profit required. Preparation only; no outreach or transaction.'});
+    const generated=await genericRun(env,'economy',instruction,{worker:{name:worker.name,mandate:worker.mandate,target_market:worker.target_market,offer:worker.offer},rule:'Zero spending. Positive expected net profit required. Preparation only; no outreach or transaction.'}),result=generated.text;
     const expectedRevenue=Math.max(0,Number(b.expected_revenue||0)),directCost=Math.max(0,Number(b.direct_cost||0)),expectedProfit=expectedRevenue-directCost;
     if(directCost>0)return json({error:'autonomous_spending_prohibited',message:'This worker has a zero spending limit.'},409);
     if(expectedRevenue>0&&expectedProfit<=0)return json({error:'positive_profit_required'},409);
     const runId=uid();
     await env.DB.prepare('INSERT INTO autonomous_worker_runs(id,tenant_id,worker_id,instruction,output,expected_revenue,direct_cost,expected_profit,status,approval_required,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(runId,tenant(u),id,instruction,result,expectedRevenue,0,expectedRevenue,'prepared',1,now()).run();
-    return json({ok:true,run_id:runId,worker_id:id,output:result,expected_revenue:expectedRevenue,direct_cost:0,expected_profit:expectedRevenue,status:'prepared',approval_required:true,spending_executed:false,external_actions_executed:false});
+    return json({ok:true,run_id:runId,worker_id:id,output:result,ai_provider:generated.provider,ai_model:generated.model,expected_revenue:expectedRevenue,direct_cost:0,expected_profit:expectedRevenue,status:'prepared',approval_required:true,spending_executed:false,external_actions_executed:false});
   }catch(e){return json({error:e?.message||'worker_run_failed'},503);}
 }
 
@@ -192,7 +189,8 @@ async function status(env,u){
     tiktok:String(env.TIKTOK_SOCIAL_CONFIGURED||'').toLowerCase()==='true',
     youtube:String(env.YOUTUBE_SOCIAL_CONFIGURED||'').toLowerCase()==='true'
   };
-  return json({ok:true,core:'Caelomere Celestial Core',model:MODEL,services:Object.entries(SERVICES).map(([key,v])=>({key,...v,ready:key==='vision'?integrations.workers_ai:key==='sound'?integrations.workers_ai:integrations.workers_ai})),integrations,runs:Number(count?.n||0),human_approval_required_for:['publish','send','payment','signature','media_release','commercial_offer','client_outreach'],autonomous_economy:{profit_only:true,spending_limit:0,borrowing:false,speculative_trading:false,contracts:false,loss_exposure:false,objective:'Earn sustainable revenue to fund Caelomere-controlled infrastructure and future server capacity'}});
+  const providers=providerStatus(env),aiReady=providers.openai.configured||providers.workers_ai.configured;
+  return json({ok:true,core:'Caelomere Celestial Core',model:providers.openai.configured?providers.openai.model:MODEL,ai_providers:providers,services:Object.entries(SERVICES).map(([key,v])=>({key,...v,ready:aiReady})),integrations:{...integrations,openai:providers.openai.configured},runs:Number(count?.n||0),human_approval_required_for:['publish','send','payment','signature','media_release','commercial_offer','client_outreach'],autonomous_economy:{profit_only:true,spending_limit:0,borrowing:false,speculative_trading:false,contracts:false,loss_exposure:false,objective:'Earn sustainable revenue to fund Caelomere-controlled infrastructure and future server capacity'}});
 }
 
 export async function handleCore(request,env){
