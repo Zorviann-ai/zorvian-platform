@@ -6,6 +6,27 @@ import { handleMedia } from './media.js';
 import { handleAuthors } from './authors.js';
 import { handleCore } from './core.js';
 
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  'cross-origin-resource-policy': 'same-origin'
+};
+
+function secure(response) {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+function blocksCrossSiteCookieWrite(request) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return false;
+  if (!request.headers.get('Cookie')) return false;
+  const origin = request.headers.get('Origin');
+  return Boolean(origin && origin !== new URL(request.url).origin);
+}
+
 async function enhanceCRM(response) {
   const type = response.headers.get('content-type') || '';
   if (!response.ok || !type.includes('text/html')) return response;
@@ -83,16 +104,19 @@ async function enhanceCRM(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === '/mcp' || url.pathname === '/mcp/') return handleMCP(request, env);
-    if (url.pathname.startsWith('/api/crm/')) return handleCRM(request, env);
-    if (url.pathname.startsWith('/api/social/')) return handleSocial(request, env);
-    if (url.pathname.startsWith('/api/media/')) return handleMedia(request, env);
-    if (url.pathname.startsWith('/api/authors/')) return handleAuthors(request, env);
-    if (url.pathname.startsWith('/api/core/')) return handleCore(request, env);
+    if (url.pathname.startsWith('/api/') && blocksCrossSiteCookieWrite(request)) {
+      return secure(new Response(JSON.stringify({ error: 'cross_site_request_blocked' }), { status: 403, headers: { 'content-type': 'application/json; charset=UTF-8', 'cache-control': 'no-store' } }));
+    }
+    if (url.pathname === '/mcp' || url.pathname === '/mcp/') return secure(await handleMCP(request, env));
+    if (url.pathname.startsWith('/api/crm/')) return secure(await handleCRM(request, env));
+    if (url.pathname.startsWith('/api/social/')) return secure(await handleSocial(request, env));
+    if (url.pathname.startsWith('/api/media/')) return secure(await handleMedia(request, env));
+    if (url.pathname.startsWith('/api/authors/')) return secure(await handleAuthors(request, env));
+    if (url.pathname.startsWith('/api/core/')) return secure(await handleCore(request, env));
     const response = await app.fetch(request, env, ctx);
     if (request.method === 'GET' && (url.pathname === '/crm' || url.pathname === '/crm.html')) {
-      return enhanceCRM(response);
+      return secure(await enhanceCRM(response));
     }
-    return response;
+    return secure(response);
   }
 };
