@@ -1,6 +1,6 @@
 name = "zorvian-platform"
 main = "src/platform.js"
-compatibility_date = "2026-08-01"
+compatibility_date = "2026-08-25"
 
 [assets]
 directory = "./public"
@@ -17,7 +17,7 @@ binding = "AI"
 
 [env.production]
 name = "zorvian-platform-production"
-compatibility_date = "2026-08-01"
+compatibility_date = "2026-08-25"
 
 [env.production.assets]
 directory = "./public"
