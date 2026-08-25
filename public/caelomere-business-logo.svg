@@ -1,22 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
-  <title id="title">Caelomere Ltd business logo</title>
-  <desc id="desc">A restrained gold Caelomere C monogram with ivory corporate wordmark on black.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
+  <title id="title">Caelomere luxury celestial business logo</title>
+  <desc id="desc">A champagne-gold crescent C and north star beside an elegant Caelomere wordmark.</desc>
   <defs>
-    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8A5B16"/><stop offset="0.32" stop-color="#F4D684"/><stop offset="0.62" stop-color="#C8912E"/><stop offset="1" stop-color="#6C420D"/>
+    <linearGradient id="champagne" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8C692C"/><stop offset="0.28" stop-color="#E8D39E"/><stop offset="0.52" stop-color="#B98A3E"/><stop offset="0.78" stop-color="#F1E2B8"/><stop offset="1" stop-color="#76501D"/>
     </linearGradient>
-    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
-  <rect width="1400" height="420" rx="34" fill="#050505"/>
-  <g transform="translate(58 54)">
-    <circle cx="156" cy="156" r="122" fill="none" stroke="#2B2111" stroke-width="1"/>
-    <path d="M244 86C221 52 183 32 141 35C77 39 29 95 35 159C41 223 98 270 162 263C194 260 224 245 246 221L213 192C198 207 179 216 158 218C119 222 84 194 80 155C76 116 105 82 144 79C170 77 194 88 210 108Z" fill="url(#gold)" filter="url(#glow)"/>
-    <path d="M219 111L169 151L219 191L191 213L113 151L191 89Z" fill="#050505"/>
-    <circle cx="156" cy="156" r="7" fill="#F4D684"/>
+  <rect width="1600" height="520" fill="#070707"/>
+  <g transform="translate(85 65)">
+    <circle cx="190" cy="195" r="150" fill="none" stroke="#2B261D" stroke-width="1"/>
+    <path d="M288 91A145 145 0 1 0 294 291A124 124 0 1 1 288 91Z" fill="url(#champagne)"/>
+    <path d="M299 83L307 109L333 117L307 125L299 151L291 125L265 117L291 109Z" fill="#EEE7D9"/>
+    <circle cx="299" cy="117" r="3.5" fill="#B98A3E"/>
   </g>
-  <g transform="translate(390 103)">
-    <text x="0" y="90" fill="#F5F0E7" font-family="Georgia, 'Times New Roman', serif" font-size="92" font-weight="600" letter-spacing="8">CAELOMERE</text>
-    <line x1="4" y1="128" x2="865" y2="128" stroke="#8A651F" stroke-width="1"/>
-    <text x="4" y="176" fill="#D4AF58" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" letter-spacing="11">INTELLIGENCE WITH HUMAN JUDGEMENT</text>
+  <g transform="translate(485 150)">
+    <text x="0" y="112" fill="#F3EFE7" font-family="Baskerville, 'Libre Baskerville', Georgia, serif" font-size="112" font-weight="400" letter-spacing="14">CAELOMERE</text>
+    <line x1="4" y1="156" x2="963" y2="156" stroke="#A97D37" stroke-width="1"/>
+    <text x="8" y="205" fill="#C8AE79" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" letter-spacing="15">LTD</text>
   </g>
 </svg>
