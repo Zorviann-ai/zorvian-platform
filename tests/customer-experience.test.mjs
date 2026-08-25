@@ -32,3 +32,15 @@ test('AI specialist identities no longer expose the legacy product brand', async
   assert.doesNotMatch(source,/Zorvian AI/);
   assert.match(source,/Caelomere AI Receptionist/);
 });
+
+test('main hub keeps Caelomere present while the user works', async () => {
+  const html=await read('public/index.html');
+  for(const marker of ['caelomere-mark.svg','Caelomere is here','OPEN CRM','OPEN SOCIAL','OPEN TV STUDIO','PUBLIC WEBSITE','SPOKEN ANSWERS ON','/api/ai/ask']) assert.ok(html.includes(marker),marker);
+  assert.ok(html.includes('SpeechSynthesisUtterance'));
+});
+
+test('new brand assets define the celestial identity', async () => {
+  const [svg,css]=await Promise.all([read('public/caelomere-mark.svg'),read('public/caelomere-brand.css')]);
+  assert.match(svg,/celestial C orbit/i);
+  for(const colour of ['#07131D','#102A3A','#28D7C0','#E9F1ED','#E7B84B','#7B6CF6']) assert.ok(svg.includes(colour)||css.includes(colour),colour);
+});
