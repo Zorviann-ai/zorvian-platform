@@ -1,0 +1,89 @@
+name: Deploy Caelomere CRM to Cloudflare
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "0001_initial.sql"
+      - "package.json"
+      - "package-lock.json"
+      - "wrangler.toml"
+      - ".github/workflows/deploy-cloudflare.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: caelomere-cloudflare-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Test and deploy production CRM
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Require Cloudflare deployment credentials
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing production secret CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing production secret CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+
+      - name: Run CRM and AI backend checks
+        run: npm run test:backend
+
+      - name: Validate production bundle
+        run: npx wrangler deploy --env production --dry-run
+
+      - name: Apply idempotent D1 schema
+        run: npx wrangler d1 execute zorvian-db --remote --env production --file=./0001_initial.sql
+
+      - name: Deploy production Worker
+        id: deploy
+        run: |
+          set -o pipefail
+          npx wrangler deploy --env production 2>&1 | tee deploy-output.txt
+          url=$(grep -Eo 'https://[^ ]+\.workers\.dev' deploy-output.txt | tail -1 || true)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test public Worker
+        if: steps.deploy.outputs.url != ''
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "$WORKER_URL/" >/dev/null
+          status=$(curl --silent --output /tmp/health.json --write-out '%{http_code}' "$WORKER_URL/api/health")
+          test "$status" = "401" || { echo "::error::Expected protected health endpoint to return 401, received $status"; cat /tmp/health.json; exit 1; }
+          status=$(curl --silent --output /tmp/crm.json --write-out '%{http_code}' "$WORKER_URL/api/crm/status")
+          test "$status" = "401" || { echo "::error::Expected protected CRM endpoint to return 401, received $status"; cat /tmp/crm.json; exit 1; }
+          status=$(curl --silent --output /tmp/mcp.json --write-out '%{http_code}' "$WORKER_URL/mcp")
+          test "$status" = "401" || { echo "::error::Expected protected MCP endpoint to return 401, received $status"; cat /tmp/mcp.json; exit 1; }
+
+      - name: Deployment summary
+        run: |
+          echo "## Caelomere production deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tests: passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- D1 schema: applied" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Worker: deployed" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${{ steps.deploy.outputs.url }}" ]; then
+            echo "- URL: ${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
