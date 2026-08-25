@@ -37,8 +37,8 @@ async function enhanceCRM(response) {
   if (studioButton && !byId('socialVideoStudioLink')) {
     const socialButton = document.createElement('button');
     socialButton.id = 'socialVideoStudioLink';
-    socialButton.textContent = 'Social & Video Studio';
-    socialButton.onclick = () => { location.href = '/social-studio.html'; };
+    socialButton.textContent = 'AI Media Studio';
+    socialButton.onclick = () => { location.href = '/media-studio.html'; };
     studioButton.insertAdjacentElement('afterend', socialButton);
   }
 
