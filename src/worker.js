@@ -21,7 +21,9 @@ function getCookie(request, name) {
   return match ? match[1] : null;
 }
 
-async function hash(password, salt = crypto.randomUUID()) {
+const PASSWORD_HASH_ITERATIONS = 210000;
+
+async function hash(password, salt = crypto.randomUUID(), iterations = PASSWORD_HASH_ITERATIONS) {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(password),
@@ -34,20 +36,31 @@ async function hash(password, salt = crypto.randomUUID()) {
     {
       name: "PBKDF2",
       salt: new TextEncoder().encode(salt),
-      iterations: 10000,
+      iterations,
       hash: "SHA-256",
     },
     key,
     256
   );
 
-  return salt + "$" + btoa(String.fromCharCode(...new Uint8Array(bits)));
+  return `pbkdf2_sha256$${iterations}$${salt}$${btoa(String.fromCharCode(...new Uint8Array(bits)))}`;
 }
 
 async function verify(password, stored) {
-  const [salt] = String(stored || "").split("$");
-  if (!salt) return false;
-  return (await hash(password, salt)) === stored;
+  const parts = String(stored || "").split("$");
+  if (parts[0] === "pbkdf2_sha256" && parts.length === 4) {
+    const iterations = Number(parts[1]);
+    if (!Number.isInteger(iterations) || iterations < 10000 || iterations > 1000000) return false;
+    return secureEqual(await hash(password, parts[2], iterations), stored);
+  }
+  if (parts.length === 2 && parts[0]) {
+    const legacy = `${parts[0]}$${parts[1]}`;
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: new TextEncoder().encode(parts[0]), iterations: 10000, hash: "SHA-256" }, key, 256);
+    const candidate = `${parts[0]}$${btoa(String.fromCharCode(...new Uint8Array(bits)))}`;
+    return secureEqual(candidate, legacy);
+  }
+  return false;
 }
 
 async function secureEqual(left, right) {
