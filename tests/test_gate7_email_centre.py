@@ -7,7 +7,7 @@ os.environ["ZORVIAN_ENV"] = "test"
 os.environ["SQLITE_PATH"] = DB_PATH
 os.environ["GUARDIAN_HASH_PEPPER"] = "gate7-email-centre-test"
 os.environ["RESEND_API_KEY"] = "re_test"
-os.environ["SMTP_FROM"] = "Zorvian <support@zorvian.co.uk>"
+os.environ["SMTP_FROM"] = "Caelomere <support@caelomere.com>"
 os.environ["RESEND_INBOUND_DOMAIN"] = "inbound.zorvian.test"
 os.environ["RESEND_WEBHOOK_SECRET"] = "whsec_Z2F0ZTctdGVzdC13ZWJob29rLWtleQ=="
 

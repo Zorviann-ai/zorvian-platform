@@ -13,8 +13,8 @@ def valid_env(name="staging", db_id="staging-db"):
         "ZORVIAN_DATABASE_ID": db_id,
         "SQLITE_PATH": "/data/zorvian/" + name + ".db",
         "GUARDIAN_HASH_PEPPER": "p" * 48,
-        "ALLOWED_ORIGINS": "https://" + name + ".zorvian.co.uk",
-        "PUBLIC_APP_URL": "https://" + name + ".zorvian.co.uk",
+        "ALLOWED_ORIGINS": "https://" + name + ".caelomere.com",
+        "PUBLIC_APP_URL": "https://" + name + ".caelomere.com",
         "SMTP_HOST": "smtp.example.test",
         "SMTP_USERNAME": "zorvian",
         "SMTP_PASSWORD": "not-a-real-secret",
@@ -41,10 +41,10 @@ def test_public_url_must_be_explicit_https_and_allowed():
     del env["PUBLIC_APP_URL"]
     assert readiness_report(env)["ready"] is False
     env = valid_env()
-    env["PUBLIC_APP_URL"] = "http://staging.zorvian.co.uk"
+    env["PUBLIC_APP_URL"] = "http://staging.caelomere.com"
     assert readiness_report(env)["ready"] is False
     env = valid_env()
-    env["PUBLIC_APP_URL"] = "https://other.zorvian.co.uk"
+    env["PUBLIC_APP_URL"] = "https://other.caelomere.com"
     assert readiness_report(env)["ready"] is False
 
 

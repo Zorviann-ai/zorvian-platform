@@ -1,4 +1,4 @@
-# Zorvian Gate 2 Deployment
+# Caelomere Gate 2 Deployment
 
 ## Included
 - Public organisation account creation
@@ -11,14 +11,14 @@
 - Team invitations and roles
 - Tenant-scoped data access
 - Guardian security events and status
-- Production CORS allowlist for zorvian.co.uk
+- Production CORS allowlist for caelomere.com
 - Production API docs disabled
 - Security headers
 
 ## Railway variables required before public onboarding
-ZORVIAN_ENV=production
+CAELOMERE_ENV=production
 GUARDIAN_HASH_PEPPER=<long random secret>
-ALLOWED_ORIGINS=https://zorvian.co.uk,https://www.zorvian.co.uk
+ALLOWED_ORIGINS=https://caelomere.com,https://www.caelomere.com
 
 For email verification/password reset/invitations:
 SMTP_HOST=<provider SMTP host>

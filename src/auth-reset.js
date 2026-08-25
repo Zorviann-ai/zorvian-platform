@@ -54,15 +54,15 @@ async function sendResetEmail(env, to, resetUrl) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      from: "Zorvian Security <security@zorvian.co.uk>",
+      from: "Caelomere Security <support@caelomere.com>",
       to: [to],
-      subject: "Reset your Zorvian password",
+      subject: "Reset your Caelomere password",
       html: `
         <div style="font-family:Arial,sans-serif;background:#070707;color:#f5f0e7;padding:32px;line-height:1.55">
           <div style="max-width:620px;margin:0 auto;border:1px solid #7f6118;border-radius:12px;padding:30px;background:#0d0d0d">
-            <div style="color:#d6a82d;font-size:13px;font-weight:700;letter-spacing:.12em">ZORVIAN SECURITY</div>
+            <div style="color:#d6a82d;font-size:13px;font-weight:700;letter-spacing:.12em">CAELOMERE SECURITY</div>
             <h1 style="font-size:30px;margin:12px 0 16px;color:#fff">Reset your password</h1>
-            <p>We received a request to reset the password for your Zorvian account.</p>
+            <p>We received a request to reset the password for your Caelomere account.</p>
             <p><a href="${resetUrl}" style="display:inline-block;background:#d6a82d;color:#070707;text-decoration:none;font-weight:800;padding:13px 20px;border-radius:7px">RESET PASSWORD</a></p>
             <p style="color:#aaa">This link expires in 30 minutes and can only be used once.</p>
             <p style="color:#aaa">If you did not request this reset, you can ignore this email.</p>

@@ -139,7 +139,7 @@ test('public login shell remains reachable while BOS APIs stay locked', async ()
   assert.equal(leads.status, 401);
 });
 
-test('public self-registration is disabled without a Zorvian invitation', async () => {
+test('public self-registration is disabled without a Caelomere invitation', async () => {
   const db = new MemoryDB();
   const response = await worker.fetch(request('/api/auth/register',{method:'POST',body:{name:'Public User',email:'public@example.com',password:'correct-horse-123',business:'Public Co'}}),{DB:db,ASSETS:{fetch:()=>new Response('asset')}});
   assert.equal(response.status,403);
