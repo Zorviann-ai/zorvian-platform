@@ -182,7 +182,7 @@ async function callTool(name, args, env) {
 
 export async function handleMCP(request, env) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization,content-type,mcp-session-id,mcp-protocol-version,mcp-method,mcp-name', 'access-control-allow-methods': 'POST,GET,DELETE,OPTIONS' } });
-  if (!authorized(request, env)) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { ...JSON_HEADERS, 'www-authenticate': 'Bearer realm="zorvian-crm-mcp"' } });
+  if (!authorized(request, env)) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { ...JSON_HEADERS, 'www-authenticate': 'Bearer realm="caelomere-crm-mcp"' } });
   if (!env.DB) return rpcError(null, -32000, 'CRM database unavailable', 503);
   if (request.method === 'DELETE') return new Response(null, { status: 204 });
   if (request.method === 'GET') return new Response(JSON.stringify({ name: 'Caelomere CRM MCP', status: 'ready', endpoint: '/mcp' }), { status: 200, headers: JSON_HEADERS });
@@ -199,7 +199,7 @@ export async function handleMCP(request, env) {
     return rpc(msg.id, {
       protocolVersion,
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'zorvian-crm', title: 'Caelomere CRM', version: '1.0.0' },
+      serverInfo: { name: 'caelomere-crm', title: 'Caelomere CRM', version: '1.0.0' },
       instructions: 'Use Caelomere CRM tools to preserve project context, create and complete tasks, and update project records when the user asks. Do not invent CRM records; read current records before modifying ambiguous items.'
     }, { 'Mcp-Session-Id': uid() });
   }
