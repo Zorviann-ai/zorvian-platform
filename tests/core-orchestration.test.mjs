@@ -41,12 +41,14 @@ test('Authors flow requires rights and creates proof, story, sound and vision ha
   assert.ok(source.includes('/api/authors/projects'));
 });
 
-test('Core control workspace presents the joined services',async()=>{
+test('Core control workspace presents the joined client services',async()=>{
   const html=await fs.readFile(new URL('../public/core.html',import.meta.url),'utf8');
-  for(const marker of ['Sales AI','Marketing AI','Secretary AI','Social Media AI','Document Studio','Proofreader','Authors Visualisation','Sound Studio','Vision Studio','Profit Workers']){
+  for(const marker of ['CRM','AI Secretary','AI Assistant','Marketing & Social','Finance','Studio','Document & Letter Writer','Authors','My Workflow','GUARDIAN ACTIVE']){
     assert.ok(html.includes(marker),marker);
   }
   assert.ok(html.includes('/api/core/status'));
-  assert.ok(html.includes('/api/core/run'));
-  assert.ok(html.includes('/api/authors/visualise'));
+  assert.ok(html.includes('/crm.html'));
+  assert.ok(html.includes('/social-studio.html'));
+  assert.ok(html.includes('/media-studio.html'));
+  assert.ok(html.includes('/authors/'));
 });
