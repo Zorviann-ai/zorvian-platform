@@ -1,7 +1,13 @@
 import { generateAI, providerStatus } from './ai-router.js';
 import { getCurriculumContext, curriculumRegistry } from './curriculum.js';
 
-const JSON_HEADERS={'content-type':'application/json; charset=UTF-8','cache-control':'no-store'};
+const JSON_HEADERS={
+  'content-type':'application/json; charset=UTF-8',
+  'cache-control':'no-store',
+  'access-control-allow-origin':'*',
+  'access-control-allow-methods':'GET,POST,OPTIONS',
+  'access-control-allow-headers':'content-type'
+};
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:JSON_HEADERS});}
 function stripFences(value){return String(value||'').replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/i,'').trim();}
 function parseTutorPayload(text,fallback){try{const p=JSON.parse(stripFences(text));return {question:p.question||fallback.question,answer:p.answer||'Let us work through this together.',explanation:p.explanation||'',learning_path:Array.isArray(p.learning_path)?p.learning_path.slice(0,6):[],method:p.method||'',conclusion:p.conclusion||'',remember:p.remember||'',visual:p.visual||{type:'none',title:'',description:'',data:[]},practice:p.practice||'',check_understanding:p.check_understanding||'',references:Array.isArray(p.references)?p.references.slice(0,8):[],integrity_note:p.integrity_note||''};}catch{return {question:fallback.question,answer:text,explanation:'',learning_path:[],method:'',conclusion:'',remember:'',visual:{type:'none',title:'',description:'',data:[]},practice:'',check_understanding:'',references:[],integrity_note:''};}}
@@ -24,6 +30,7 @@ Return ONLY valid JSON: {"question":"","answer":"","explanation":"","learning_pa
 
 export async function handleTutor(request,env){
  const url=new URL(request.url);
+ if(request.method==='OPTIONS'&&url.pathname.startsWith('/api/tutor'))return new Response(null,{status:204,headers:JSON_HEADERS});
  if(request.method==='GET'&&url.pathname==='/api/tutor/status')return json({ok:true,service:'caelomere_tutor',ai:providerStatus(env),curriculum_sources:curriculumRegistry().length});
  if(request.method==='GET'&&url.pathname==='/api/tutor/curriculum')return json({ok:true,sources:curriculumRegistry()});
  if(request.method!=='POST'||url.pathname!=='/api/tutor')return null;
