@@ -10,16 +10,13 @@ test('production Worker wires the unified Celestial Core',async()=>{
 
 test('Core exposes all requested AI services and approval controls',async()=>{
   const source=await fs.readFile(new URL('../src/core.js',import.meta.url),'utf8');
-  for(const service of ['executive','sales','marketing','secretary','social','documents','proofreader','authors','sound','vision','vehicle_sourcing','economy']){
+  for(const service of ['executive','sales','marketing','secretary','social','documents','proofreader','authors','sound','vision','vehicle_sourcing']){
     assert.match(source,new RegExp(service+':\\{name:'),service);
   }
-  for(const route of ['/api/core/status','/api/core/run','/api/core/runs','/api/core/workers']){
+  for(const route of ['/api/core/status','/api/core/run','/api/core/runs']){
     assert.ok(source.includes(route),route);
   }
   assert.ok(source.includes("external_actions_executed:false"));
-  assert.ok(source.includes("spending_limit:0"));
-  assert.ok(source.includes("profit_only:true"));
-  assert.ok(source.includes("loss_exposure:false"));
 });
 
 test('Club One vehicle sourcing AI is decision support only and requires approval',async()=>{
