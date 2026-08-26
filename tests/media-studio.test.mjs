@@ -44,5 +44,6 @@ test('production Worker routes media APIs and links the studio', async () => {
   const source=await fs.readFile(new URL('../src/platform.js',import.meta.url),'utf8');
   assert.ok(source.includes("import { handleMedia } from './media.js'"));
   assert.ok(source.includes("startsWith('/api/media/')"));
-  assert.ok(source.includes("location.href = '/media-studio.html'"));
+  assert.ok(source.includes("url.pathname==='/media-studio'"));
+  assert.ok(source.includes("new URL('/media-studio.html',url)"));
 });
