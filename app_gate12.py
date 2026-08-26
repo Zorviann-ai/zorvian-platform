@@ -106,17 +106,24 @@ def autonomy_run(body: AutonomyRunIn, request: Request, u=Depends(current_user))
         f"CRM before: {json.dumps(before.as_dict())}\nCRM after safe housekeeping: {json.dumps(after.as_dict())}\n"
         f"Autonomous internal actions completed: {json.dumps(actions)}"
     )
-    assessment = "Core housekeeping completed; external intelligence provider unavailable."
-    provider = "none"
-    approval_required = False
     try:
         ctx = WorkspaceContext(tenant_id=u["tenant_id"], user_id=u["id"], role=u["role"], module="business-control", instructions=("Operate only inside this authenticated Zorvian workspace.",))
         result = _service().run(ConnectedRequest(module="business-control", task="autonomous CRM control review", prompt=prompt, needs_retrieval=False, needs_tools=False, consequential_action=False), ctx)
         assessment = result.output
         provider = result.provider
         approval_required = result.human_approval_required
-    except (LookupError, RuntimeError, ValueError, PermissionError):
-        pass
+    except LookupError as exc:
+        failure = "Core AI unavailable: no approved real AI provider is configured or available."
+        c.execute("UPDATE autonomy_runs SET summary=?,actions_count=? WHERE id=?", (failure, len(actions), run_id))
+        c.commit(); c.close()
+        audit(u, "autonomy_ai_unavailable", f"run={run_id}; {exc}", "warning")
+        raise HTTPException(503, failure)
+    except (RuntimeError, ValueError, PermissionError) as exc:
+        failure = "Core AI provider failed; the run was not reported as AI-complete."
+        c.execute("UPDATE autonomy_runs SET summary=?,actions_count=? WHERE id=?", (failure, len(actions), run_id))
+        c.commit(); c.close()
+        audit(u, "autonomy_ai_failed", f"run={run_id}; {exc}", "warning")
+        raise HTTPException(502, failure)
 
     c.execute("UPDATE autonomy_runs SET summary=?,actions_count=? WHERE id=?", (assessment[:12000], len(actions), run_id))
     c.commit(); c.close()
