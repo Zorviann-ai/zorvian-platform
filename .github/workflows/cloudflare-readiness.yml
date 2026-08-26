@@ -1,0 +1,41 @@
+name: Cloudflare readiness audit
+
+on:
+  push:
+    paths:
+      - ".github/workflows/cloudflare-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify deployment credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - name: Report Caelomere zone readiness
+        shell: bash
+        run: |
+          response=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/zones?name=caelomere.com&account.id=$CLOUDFLARE_ACCOUNT_ID")
+          echo "$response" | jq '{success, errors, zones: [.result[] | {name,status,paused,type,name_servers}]}'
+      - name: List configured Worker secret names
+        run: npx wrangler secret list --env production
+      - name: Verify production bindings
+        run: npx wrangler deploy --env production --dry-run
