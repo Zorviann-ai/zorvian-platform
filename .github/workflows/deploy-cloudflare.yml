@@ -54,8 +54,11 @@ jobs:
       - name: Validate production bundle
         run: npx wrangler deploy --env production --dry-run
 
-      - name: Apply idempotent D1 schema
-        run: npx wrangler d1 execute zorvian-db --remote --env production --file=./0001_initial.sql
+      - name: Apply idempotent D1 schema via query endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute zorvian-db --remote --env production --command="$(cat ./0001_initial.sql)"
 
       - name: Deploy production Worker
         id: deploy
