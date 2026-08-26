@@ -1,7 +1,7 @@
 import { generateAI } from './ai-router.js';
 
 const ALLOWED_RIGHTS=new Set(['PUBLIC_DOMAIN_VERIFIED','AUTHOR_PERMISSION_VERIFIED','PUBLISHER_PERMISSION_VERIFIED','LICENSE_VERIFIED']);
-const ORIGINS=new Set(['https://caelomerestudio.com','https://www.caelomerestudio.com']);
+const ORIGINS=new Set(['https://caelomerestudio.com','https://www.caelomerestudio.com','null']);
 const H={'content-type':'application/json; charset=UTF-8','cache-control':'no-store'};
 const uid=()=>crypto.randomUUID();
 const now=()=>new Date().toISOString();
