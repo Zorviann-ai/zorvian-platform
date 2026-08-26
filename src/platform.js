@@ -101,6 +101,16 @@ async function enhanceCRM(response) {
   return new Response(html, { status: response.status, statusText: response.statusText, headers });
 }
 
+async function serveAssetFallback(request, env, response) {
+  if (response.status !== 404) return response;
+  if (!['GET', 'HEAD'].includes(request.method)) return response;
+  if (!env.ASSETS || typeof env.ASSETS.fetch !== 'function') return response;
+  const url = new URL(request.url);
+  if (url.pathname.startsWith('/api/') || url.pathname === '/mcp' || url.pathname === '/mcp/') return response;
+  const assetResponse = await env.ASSETS.fetch(request);
+  return assetResponse.status === 404 ? response : assetResponse;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -113,7 +123,8 @@ export default {
     if (url.pathname.startsWith('/api/media/')) return secure(await handleMedia(request, env));
     if (url.pathname.startsWith('/api/authors/')) return secure(await handleAuthors(request, env));
     if (url.pathname.startsWith('/api/core/')) return secure(await handleCore(request, env));
-    const response = await app.fetch(request, env, ctx);
+    let response = await app.fetch(request, env, ctx);
+    response = await serveAssetFallback(request, env, response);
     if (request.method === 'GET' && (url.pathname === '/crm' || url.pathname === '/crm.html')) {
       return secure(await enhanceCRM(response));
     }
