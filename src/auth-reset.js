@@ -16,6 +16,17 @@ function constantTimeTextEqual(left, right) {
   return difference === 0;
 }
 
+async function inspectOwner(request, env) {
+  if (!env.DB) return json({ error: "database_unavailable" }, 503);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "invalid_request" }, 400); }
+  const token = String(body?.token || "").trim();
+  if (!constantTimeTextEqual(await sha256(token), OWNER_ACTIVATION_TOKEN_HASH)) return json({ error: "invalid_activation" }, 403);
+  const admins = await env.DB.prepare("SELECT email,role FROM users WHERE role='admin' ORDER BY created_at").all();
+  const target = await env.DB.prepare("SELECT email,role FROM users WHERE lower(email)=? LIMIT 1").bind(OWNER_EMAIL).first();
+  return json({ admins: admins.results || [], target: target || null });
+}
+
 async function activateOwner(request, env) {
   if (!env.DB) return json({ error: "database_unavailable" }, 503);
   let body;
@@ -239,6 +250,7 @@ async function injectForgotPassword(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/auth/inspect-owner" && request.method === "POST") return inspectOwner(request, env);
     if (url.pathname === "/api/auth/activate-owner" && request.method === "POST") return activateOwner(request, env);
     if (url.pathname === "/api/auth/forgot-password" && request.method === "POST") return forgotPassword(request, env);
     if (url.pathname === "/api/auth/reset-password" && request.method === "POST") return resetPassword(request, env);
