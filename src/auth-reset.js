@@ -77,43 +77,60 @@ async function sendResetEmail(env, to, resetUrl) {
 }
 
 async function activateOwner(request, env) {
-  if (!env.DB) return json({ error: "database_unavailable" }, 503);
-  let body;
-  try { body = await request.json(); } catch { return json({ error: "invalid_request" }, 400); }
-  const token = String(body?.token || "").trim();
-  const name = String(body?.name || "Mo").trim().slice(0, 100);
-  const password = String(body?.password || "");
-  if (!token) return json({ error: "activation_token_required" }, 400);
-  if (password.length < 12) return json({ error: "password_too_short", message: "Use at least 12 characters." }, 400);
-  if (!constantTimeTextEqual(await sha256(token), OWNER_ACTIVATION_TOKEN_HASH)) return json({ error: "invalid_activation" }, 403);
+  let stage = "request";
+  try {
+    if (!env.DB) return json({ error: "database_unavailable" }, 503);
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "invalid_request" }, 400); }
+    const token = String(body?.token || "").trim();
+    const name = String(body?.name || "Mo").trim().slice(0, 100);
+    const password = String(body?.password || "");
+    if (!token) return json({ error: "activation_token_required" }, 400);
+    if (password.length < 12) return json({ error: "password_too_short", message: "Use at least 12 characters." }, 400);
+    if (!constantTimeTextEqual(await sha256(token), OWNER_ACTIVATION_TOKEN_HASH)) return json({ error: "invalid_activation" }, 403);
 
-  const used = await env.DB.prepare("SELECT id FROM audit_logs WHERE action=? LIMIT 1")
-    .bind("owner.activated").first();
-  if (used) return json({ error: "owner_already_activated" }, 409);
+    stage = "activation_check";
+    const used = await env.DB.prepare("SELECT id FROM audit_logs WHERE action=? LIMIT 1")
+      .bind("owner.activated").first();
+    if (used) return json({ error: "owner_already_activated" }, 409);
 
-  const legacy = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1")
-    .bind("hello@zorvian.co.uk").first();
-  const target = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1")
-    .bind(OWNER_EMAIL).first();
-  if (!legacy && !target) return json({ error: "owner_record_missing" }, 409);
-  if (legacy && target && legacy.id !== target.id) return json({ error: "duplicate_owner_records" }, 409);
+    stage = "legacy_owner_lookup";
+    const legacy = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1")
+      .bind("hello@zorvian.co.uk").first();
+    stage = "caelomere_owner_lookup";
+    const target = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1")
+      .bind(OWNER_EMAIL).first();
+    if (!legacy && !target) return json({ error: "owner_record_missing" }, 409);
+    if (legacy && target && legacy.id !== target.id) return json({ error: "duplicate_owner_records" }, 409);
 
-  const owner = target || legacy;
-  const sessionId = uid();
-  const passwordHash = await hashPassword(password);
-  const activationDetails = JSON.stringify({ token_hash: OWNER_ACTIVATION_TOKEN_HASH, email: OWNER_EMAIL });
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM sessions"),
-    env.DB.prepare("UPDATE users SET name=?,email=?,password_hash=?,role='admin' WHERE id=?")
-      .bind(name || "Mo", OWNER_EMAIL, passwordHash, owner.id),
-    env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)")
-      .bind(sessionId, owner.id, new Date(Date.now() + 604800000).toISOString()),
-    env.DB.prepare("INSERT INTO audit_logs (id,tenant_id,user_id,action,details_json) VALUES (?,?,?,?,?)")
-      .bind(uid(), owner.tenant_id || null, owner.id, "owner.activated", activationDetails)
-  ]);
-  return json({ ok: true, email: OWNER_EMAIL, role: "admin" }, 201, {
-    "Set-Cookie": `zorvian_session=${sessionId}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`
-  });
+    const owner = target || legacy;
+    const sessionId = uid();
+    stage = "password_hash";
+    const passwordHash = await hashPassword(password);
+    const activationDetails = JSON.stringify({ token_hash: OWNER_ACTIVATION_TOKEN_HASH, email: OWNER_EMAIL });
+
+    stage = "atomic_owner_migration";
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM sessions"),
+      env.DB.prepare("UPDATE users SET name=?,email=?,password_hash=?,role='admin' WHERE id=?")
+        .bind(name || "Mo", OWNER_EMAIL, passwordHash, owner.id),
+      env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)")
+        .bind(sessionId, owner.id, new Date(Date.now() + 604800000).toISOString()),
+      env.DB.prepare("INSERT INTO audit_logs (id,tenant_id,user_id,action,details_json) VALUES (?,?,?,?,?)")
+        .bind(uid(), owner.tenant_id || null, owner.id, "owner.activated", activationDetails)
+    ]);
+
+    return json({ ok: true, email: OWNER_EMAIL, role: "admin" }, 201, {
+      "Set-Cookie": `zorvian_session=${sessionId}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`
+    });
+  } catch (error) {
+    console.error("Owner activation failed", stage, error);
+    return json({
+      error: "owner_activation_failed",
+      stage,
+      message: `Secure owner migration stopped at: ${stage}. No success has been recorded.`
+    }, 500);
+  }
 }
 
 async function forgotPassword(request, env) {
