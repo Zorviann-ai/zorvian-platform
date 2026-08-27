@@ -27,17 +27,28 @@ async function activateOwner(request, env) {
   if (password.length < 12) return json({ error: "password_too_short", message: "Use at least 12 characters." }, 400);
   if (!constantTimeTextEqual(await sha256(token), OWNER_ACTIVATION_TOKEN_HASH)) return json({ error: "invalid_activation" }, 403);
 
-  const existingOwner = await env.DB.prepare("SELECT id FROM users WHERE role='admin' OR lower(email)=? LIMIT 1").bind(OWNER_EMAIL).first();
-  if (existingOwner) return json({ error: "owner_already_activated" }, 409);
+  const administrator = await env.DB.prepare("SELECT id,email FROM users WHERE role='admin' LIMIT 1").first();
+  if (administrator) return json({ error: "owner_already_activated" }, 409);
 
-  const tenantId = uid();
-  const userId = uid();
+  const existingUser = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1").bind(OWNER_EMAIL).first();
   const sessionId = uid();
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO tenants (id,name,slug,website_url) VALUES (?,?,?,?)").bind(tenantId, "Caelomere Ltd", "caelomere", "https://caelomere.com"),
-    env.DB.prepare("INSERT INTO users (id,tenant_id,name,email,password_hash,role) VALUES (?,?,?,?,?,?)").bind(userId, tenantId, name || "Mo", OWNER_EMAIL, await hashPassword(password), "admin"),
-    env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)").bind(sessionId, userId, new Date(Date.now() + 604800000).toISOString())
-  ]);
+  let userId;
+  if (existingUser) {
+    userId = existingUser.id;
+    await env.DB.batch([
+      env.DB.prepare("UPDATE users SET name=?,password_hash=?,role='admin' WHERE id=?").bind(name || "Mo", await hashPassword(password), userId),
+      env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(userId),
+      env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)").bind(sessionId, userId, new Date(Date.now() + 604800000).toISOString())
+    ]);
+  } else {
+    const tenantId = uid();
+    userId = uid();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO tenants (id,name,slug,website_url) VALUES (?,?,?,?)").bind(tenantId, "Caelomere Ltd", "caelomere", "https://caelomere.com"),
+      env.DB.prepare("INSERT INTO users (id,tenant_id,name,email,password_hash,role) VALUES (?,?,?,?,?,?)").bind(userId, tenantId, name || "Mo", OWNER_EMAIL, await hashPassword(password), "admin"),
+      env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)").bind(sessionId, userId, new Date(Date.now() + 604800000).toISOString())
+    ]);
+  }
   return json({ ok: true, email: OWNER_EMAIL, role: "admin" }, 201, {
     "Set-Cookie": `zorvian_session=${sessionId}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`
   });
