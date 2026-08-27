@@ -5,7 +5,7 @@ const RESET_TTL_MS = 30 * 60 * 1000;
 const PASSWORD_HASH_ITERATIONS = 210000;
 
 const OWNER_EMAIL = "hello@caelomere.com";
-const OWNER_ACTIVATION_TOKEN_HASH = "41fa7fcec9ba1aad47faeabe3a78f90f2d7d299dd46f879cfb7b7993fe5062a9";
+const OWNER_ACTIVATION_TOKEN_HASH = "0902aec778b70053ed45be58b14c9d8a1748a5351d9e3c7280a64968e6c2529f";
 
 function constantTimeTextEqual(left, right) {
   const a = new TextEncoder().encode(String(left));
