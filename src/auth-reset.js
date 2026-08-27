@@ -27,8 +27,18 @@ async function activateOwner(request, env) {
   if (password.length < 12) return json({ error: "password_too_short", message: "Use at least 12 characters." }, 400);
   if (!constantTimeTextEqual(await sha256(token), OWNER_ACTIVATION_TOKEN_HASH)) return json({ error: "invalid_activation" }, 403);
 
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS owner_activations (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    used_at TEXT NOT NULL
+  )`).run();
+  const usedActivation = await env.DB.prepare("SELECT token_hash FROM owner_activations WHERE token_hash=? LIMIT 1").bind(OWNER_ACTIVATION_TOKEN_HASH).first();
+  if (usedActivation) return json({ error: "owner_already_activated" }, 409);
+
   const administrator = await env.DB.prepare("SELECT id,email FROM users WHERE role='admin' LIMIT 1").first();
-  if (administrator) return json({ error: "owner_already_activated" }, 409);
+  if (administrator && String(administrator.email || "").toLowerCase() !== OWNER_EMAIL) {
+    return json({ error: "different_administrator_exists" }, 409);
+  }
 
   const existingUser = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1").bind(OWNER_EMAIL).first();
   const sessionId = uid();
@@ -49,6 +59,8 @@ async function activateOwner(request, env) {
       env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)").bind(sessionId, userId, new Date(Date.now() + 604800000).toISOString())
     ]);
   }
+  await env.DB.prepare("INSERT INTO owner_activations (token_hash,user_id,used_at) VALUES (?,?,?)")
+    .bind(OWNER_ACTIVATION_TOKEN_HASH, userId, nowIso()).run();
   return json({ ok: true, email: OWNER_EMAIL, role: "admin" }, 201, {
     "Set-Cookie": `zorvian_session=${sessionId}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`
   });
