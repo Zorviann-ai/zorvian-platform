@@ -4,6 +4,45 @@ const JSON_HEADERS = { "content-type": "application/json; charset=UTF-8", "cache
 const RESET_TTL_MS = 30 * 60 * 1000;
 const PASSWORD_HASH_ITERATIONS = 210000;
 
+const OWNER_EMAIL = "hello@caelomere.com";
+const OWNER_ACTIVATION_TOKEN_HASH = "41fa7fcec9ba1aad47faeabe3a78f90f2d7d299dd46f879cfb7b7993fe5062a9";
+
+function constantTimeTextEqual(left, right) {
+  const a = new TextEncoder().encode(String(left));
+  const b = new TextEncoder().encode(String(right));
+  if (a.length !== b.length) return false;
+  let difference = 0;
+  for (let i = 0; i < a.length; i += 1) difference |= a[i] ^ b[i];
+  return difference === 0;
+}
+
+async function activateOwner(request, env) {
+  if (!env.DB) return json({ error: "database_unavailable" }, 503);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "invalid_request" }, 400); }
+  const token = String(body?.token || "").trim();
+  const name = String(body?.name || "Mo").trim().slice(0, 100);
+  const password = String(body?.password || "");
+  if (!token) return json({ error: "activation_token_required" }, 400);
+  if (password.length < 12) return json({ error: "password_too_short", message: "Use at least 12 characters." }, 400);
+  if (!constantTimeTextEqual(await sha256(token), OWNER_ACTIVATION_TOKEN_HASH)) return json({ error: "invalid_activation" }, 403);
+
+  const existingOwner = await env.DB.prepare("SELECT id FROM users WHERE role='admin' OR lower(email)=? LIMIT 1").bind(OWNER_EMAIL).first();
+  if (existingOwner) return json({ error: "owner_already_activated" }, 409);
+
+  const tenantId = uid();
+  const userId = uid();
+  const sessionId = uid();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO tenants (id,name,slug,website_url) VALUES (?,?,?,?)").bind(tenantId, "Caelomere Ltd", "caelomere", "https://caelomere.com"),
+    env.DB.prepare("INSERT INTO users (id,tenant_id,name,email,password_hash,role) VALUES (?,?,?,?,?,?)").bind(userId, tenantId, name || "Mo", OWNER_EMAIL, await hashPassword(password), "admin"),
+    env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)").bind(sessionId, userId, new Date(Date.now() + 604800000).toISOString())
+  ]);
+  return json({ ok: true, email: OWNER_EMAIL, role: "admin" }, 201, {
+    "Set-Cookie": `zorvian_session=${sessionId}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`
+  });
+}
+
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), { status, headers: { ...JSON_HEADERS, ...headers } });
 }
@@ -177,6 +216,7 @@ async function injectForgotPassword(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/auth/activate-owner" && request.method === "POST") return activateOwner(request, env);
     if (url.pathname === "/api/auth/forgot-password" && request.method === "POST") return forgotPassword(request, env);
     if (url.pathname === "/api/auth/reset-password" && request.method === "POST") return resetPassword(request, env);
     const response = await app.fetch(request, env, ctx);
