@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Activate Caelomere Owner</title><style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070707;color:#f5f0e7;font:18px/1.5 Arial,sans-serif}.panel{width:min(620px,92vw);border:1px solid #8b6a1d;padding:42px;background:#0e0e0e}h1{margin:0 0 10px;color:#d9ae3c;font-size:34px}p{color:#c9c3b8}label{display:block;margin:22px 0 7px;font-weight:700}input{width:100%;min-height:52px;padding:12px;border:1px solid #685a38;background:#171717;color:#fff;font-size:18px}button{width:100%;min-height:54px;margin-top:26px;border:0;background:#d9ae3c;color:#080808;font-size:17px;font-weight:800;cursor:pointer}button:disabled{opacity:.55}.status{min-height:30px;margin-top:18px;font-weight:700}.small{font-size:14px;color:#8f8a80}</style></head>
+<body><main class="panel"><div class="small">CAELOMERE SECURE ACTIVATION</div><h1>Create the owner account</h1><p>This one-use page activates <strong>hello@caelomere.com</strong> as the production administrator.</p>
+<form id="form"><label for="name">Your name</label><input id="name" value="Mo" autocomplete="name" required>
+<label for="password">Choose a password</label><input id="password" type="password" autocomplete="new-password" minlength="12" required>
+<label for="confirm">Repeat the password</label><input id="confirm" type="password" autocomplete="new-password" minlength="12" required>
+<button id="submit">ACTIVATE OWNER ACCOUNT</button><div class="status" id="status" role="status"></div></form>
+<p class="small">Use at least 12 characters. The password is sent securely to Caelomere and stored only as a strong one-way hash.</p></main>
+<script>
+const token=new URLSearchParams(location.search).get('token')||'';
+const form=document.getElementById('form'),status=document.getElementById('status'),button=document.getElementById('submit');
+form.addEventListener('submit',async event=>{event.preventDefault();const password=document.getElementById('password').value,confirm=document.getElementById('confirm').value;if(password!==confirm){status.textContent='The passwords do not match.';return}button.disabled=true;status.textContent='Activating securely…';try{const response=await fetch('/api/auth/activate-owner',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,name:document.getElementById('name').value,password})});const data=await response.json();if(!response.ok)throw new Error(data.message||data.error||'Activation failed');status.style.color='#63d391';status.textContent='Owner account activated. Opening Caelomere Core…';setTimeout(()=>location.href='/core.html',1200)}catch(error){status.style.color='#ff7777';status.textContent=error.message==='owner_already_activated'?'The owner account has already been activated.':error.message;button.disabled=false}});
+</script></body></html>
