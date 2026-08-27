@@ -218,7 +218,14 @@ async function injectForgotPassword(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/auth/activate-owner" && request.method === "POST") return activateOwner(request, env);
+    if (url.pathname === "/api/auth/activate-owner" && request.method === "POST") {
+      try {
+        return await activateOwner(request, env);
+      } catch (error) {
+        console.error("Owner activation failed", error);
+        return json({ error: "owner_activation_failed", message: "The secure owner migration could not be completed. No success has been recorded." }, 500);
+      }
+    }
     if (url.pathname === "/api/auth/forgot-password" && request.method === "POST") return forgotPassword(request, env);
     if (url.pathname === "/api/auth/reset-password" && request.method === "POST") return resetPassword(request, env);
     const response = await app.fetch(request, env, ctx);
