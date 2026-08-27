@@ -16,6 +16,66 @@ function constantTimeTextEqual(left, right) {
   return difference === 0;
 }
 
+function json(data, status = 200, headers = {}) {
+  return new Response(JSON.stringify(data), { status, headers: { ...JSON_HEADERS, ...headers } });
+}
+
+function uid() { return crypto.randomUUID(); }
+function nowIso() { return new Date().toISOString(); }
+
+async function hashPassword(password, salt = crypto.randomUUID()) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: PASSWORD_HASH_ITERATIONS, hash: "SHA-256" },
+    key,
+    256
+  );
+  return `pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${salt}${btoa(String.fromCharCode(...new Uint8Array(bits)))}`;
+}
+
+async function sha256(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text)));
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function ensureResetTable(env) {
+  if (!env.DB) throw new Error("database_unavailable");
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS password_resets (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`).run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token_hash, expires_at)").run();
+}
+
+async function sendResetEmail(env, to, resetUrl) {
+  if (!env.RESEND_API_KEY) throw new Error("resend_not_configured");
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: "Caelomere Security <support@caelomere.com>",
+      to: [to],
+      subject: "Reset your Caelomere password",
+      html: `<div style="font-family:Arial,sans-serif"><h1>Reset your Caelomere password</h1><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 30 minutes and can only be used once.</p></div>`
+    })
+  });
+  if (!response.ok) {
+    console.error("Resend password reset failed", response.status);
+    throw new Error("email_send_failed");
+  }
+}
+
 async function activateOwner(request, env) {
   if (!env.DB) return json({ error: "database_unavailable" }, 503);
   let body;
