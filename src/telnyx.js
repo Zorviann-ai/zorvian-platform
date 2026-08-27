@@ -51,9 +51,31 @@ function readiness(env){
     capabilities:['uk_numbers','inbound_voice','outbound_voice','call_transfer','voicemail','recording','transcription','sms','mms','whatsapp_ready','otp','number_lookup','delivery_events']
   };
 }
+async function handlePublicWebhook(request,env){
+  if(request.method!=='POST')return json({error:'method_not_allowed'},405);
+  if(!env.TELNYX_PUBLIC_KEY)return json({error:'telnyx_webhook_not_configured'},503);
+  if(!await verifyTelnyxWebhook(request,env.TELNYX_PUBLIC_KEY))return json({error:'invalid_webhook_signature'},401);
+  let event={};try{event=await request.json();}catch{return json({error:'invalid_json'},400);}
+  const data=event?.data||{};
+  const payload=data?.payload||{};
+  const eventType=data?.event_type||'';
+  const callControlId=payload?.call_control_id;
+  try{
+    if(eventType==='call.initiated'&&callControlId)await answerCall(env,callControlId);
+    if(eventType==='call.answered'&&callControlId){
+      await speakCall(env,callControlId,'Good morning. You have reached Caelomere. I am the Caelomere AI receptionist. How may I help you today?');
+      await startTranscription(env,callControlId);
+    }
+    return json({ok:true,received:eventType});
+  }catch(error){
+    console.error(JSON.stringify({event:'telnyx_webhook_command_failed',event_type:eventType,error:String(error?.message||error)}));
+    return json({error:'telnyx_command_failed'},502);
+  }
+}
 export async function handleTelnyx(request,env){
   const url=new URL(request.url);
   if(!url.pathname.startsWith('/api/telnyx/'))return null;
+  if(url.pathname==='/api/telnyx/webhook')return handlePublicWebhook(request,env);
   const current=await user(request,env);
   if(!current)return json({error:'unauthorized'},401);
   if(url.pathname==='/api/telnyx/status'&&request.method==='GET')return json({ok:true,provider:'telnyx',...readiness(env)});
