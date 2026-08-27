@@ -16,17 +16,6 @@ function constantTimeTextEqual(left, right) {
   return difference === 0;
 }
 
-async function inspectOwner(request, env) {
-  if (!env.DB) return json({ error: "database_unavailable" }, 503);
-  let body;
-  try { body = await request.json(); } catch { return json({ error: "invalid_request" }, 400); }
-  const token = String(body?.token || "").trim();
-  if (!constantTimeTextEqual(await sha256(token), OWNER_ACTIVATION_TOKEN_HASH)) return json({ error: "invalid_activation" }, 403);
-  const admins = await env.DB.prepare("SELECT email,role FROM users WHERE role='admin' ORDER BY created_at").all();
-  const target = await env.DB.prepare("SELECT email,role FROM users WHERE lower(email)=? LIMIT 1").bind(OWNER_EMAIL).first();
-  return json({ admins: admins.results || [], target: target || null });
-}
-
 async function activateOwner(request, env) {
   if (!env.DB) return json({ error: "database_unavailable" }, 503);
   let body;
@@ -43,112 +32,31 @@ async function activateOwner(request, env) {
     user_id TEXT NOT NULL,
     used_at TEXT NOT NULL
   )`).run();
-  const usedActivation = await env.DB.prepare("SELECT token_hash FROM owner_activations WHERE token_hash=? LIMIT 1").bind(OWNER_ACTIVATION_TOKEN_HASH).first();
-  if (usedActivation) return json({ error: "owner_already_activated" }, 409);
+  const used = await env.DB.prepare("SELECT token_hash FROM owner_activations WHERE token_hash=? LIMIT 1")
+    .bind(OWNER_ACTIVATION_TOKEN_HASH).first();
+  if (used) return json({ error: "owner_already_activated" }, 409);
 
-  const administrator = await env.DB.prepare("SELECT id,email FROM users WHERE role='admin' LIMIT 1").first();
-  if (administrator && String(administrator.email || "").toLowerCase() !== OWNER_EMAIL) {
-    return json({ error: "different_administrator_exists" }, 409);
-  }
+  const legacy = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1")
+    .bind("hello@zorvian.co.uk").first();
+  const target = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1")
+    .bind(OWNER_EMAIL).first();
+  if (!legacy && !target) return json({ error: "owner_record_missing" }, 409);
+  if (legacy && target && legacy.id !== target.id) return json({ error: "duplicate_owner_records" }, 409);
 
-  const existingUser = await env.DB.prepare("SELECT id,tenant_id FROM users WHERE lower(email)=? LIMIT 1").bind(OWNER_EMAIL).first();
+  const owner = target || legacy;
   const sessionId = uid();
-  let userId;
-  if (existingUser) {
-    userId = existingUser.id;
-    await env.DB.batch([
-      env.DB.prepare("UPDATE users SET name=?,password_hash=?,role='admin' WHERE id=?").bind(name || "Mo", await hashPassword(password), userId),
-      env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(userId),
-      env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)").bind(sessionId, userId, new Date(Date.now() + 604800000).toISOString())
-    ]);
-  } else {
-    const tenantId = uid();
-    userId = uid();
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO tenants (id,name,slug,website_url) VALUES (?,?,?,?)").bind(tenantId, "Caelomere Ltd", "caelomere", "https://caelomere.com"),
-      env.DB.prepare("INSERT INTO users (id,tenant_id,name,email,password_hash,role) VALUES (?,?,?,?,?,?)").bind(userId, tenantId, name || "Mo", OWNER_EMAIL, await hashPassword(password), "admin"),
-      env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)").bind(sessionId, userId, new Date(Date.now() + 604800000).toISOString())
-    ]);
-  }
-  await env.DB.prepare("INSERT INTO owner_activations (token_hash,user_id,used_at) VALUES (?,?,?)")
-    .bind(OWNER_ACTIVATION_TOKEN_HASH, userId, nowIso()).run();
+  await env.DB.prepare("DELETE FROM sessions").run();
+  await env.DB.prepare("UPDATE users SET name=?,email=?,password_hash=?,role='admin' WHERE id=?")
+    .bind(name || "Mo", OWNER_EMAIL, await hashPassword(password), owner.id).run();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO sessions (id,user_id,expires_at) VALUES (?,?,?)")
+      .bind(sessionId, owner.id, new Date(Date.now() + 604800000).toISOString()),
+    env.DB.prepare("INSERT INTO owner_activations (token_hash,user_id,used_at) VALUES (?,?,?)")
+      .bind(OWNER_ACTIVATION_TOKEN_HASH, owner.id, nowIso())
+  ]);
   return json({ ok: true, email: OWNER_EMAIL, role: "admin" }, 201, {
     "Set-Cookie": `zorvian_session=${sessionId}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`
   });
-}
-
-function json(data, status = 200, headers = {}) {
-  return new Response(JSON.stringify(data), { status, headers: { ...JSON_HEADERS, ...headers } });
-}
-
-function uid() { return crypto.randomUUID(); }
-function nowIso() { return new Date().toISOString(); }
-
-async function hashPassword(password, salt = crypto.randomUUID()) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"]
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: PASSWORD_HASH_ITERATIONS, hash: "SHA-256" },
-    key,
-    256
-  );
-  return `pbkdf2_sha256$${PASSWORD_HASH_ITERATIONS}$${salt}$${btoa(String.fromCharCode(...new Uint8Array(bits)))}`;
-}
-
-async function sha256(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text)));
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function ensureResetTable(env) {
-  if (!env.DB) throw new Error("database_unavailable");
-  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS password_resets (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    token_hash TEXT NOT NULL UNIQUE,
-    expires_at TEXT NOT NULL,
-    used_at TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-  )`).run();
-  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token_hash, expires_at)").run();
-}
-
-async function sendResetEmail(env, to, resetUrl) {
-  if (!env.RESEND_API_KEY) throw new Error("resend_not_configured");
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      from: "Caelomere Security <support@caelomere.com>",
-      to: [to],
-      subject: "Reset your Caelomere password",
-      html: `
-        <div style="font-family:Arial,sans-serif;background:#070707;color:#f5f0e7;padding:32px;line-height:1.55">
-          <div style="max-width:620px;margin:0 auto;border:1px solid #7f6118;border-radius:12px;padding:30px;background:#0d0d0d">
-            <div style="color:#d6a82d;font-size:13px;font-weight:700;letter-spacing:.12em">CAELOMERE SECURITY</div>
-            <h1 style="font-size:30px;margin:12px 0 16px;color:#fff">Reset your password</h1>
-            <p>We received a request to reset the password for your Caelomere account.</p>
-            <p><a href="${resetUrl}" style="display:inline-block;background:#d6a82d;color:#070707;text-decoration:none;font-weight:800;padding:13px 20px;border-radius:7px">RESET PASSWORD</a></p>
-            <p style="color:#aaa">This link expires in 30 minutes and can only be used once.</p>
-            <p style="color:#aaa">If you did not request this reset, you can ignore this email.</p>
-          </div>
-        </div>`
-    })
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    console.error("Resend password reset failed", response.status, body);
-    throw new Error("email_send_failed");
-  }
 }
 
 async function forgotPassword(request, env) {
@@ -250,7 +158,6 @@ async function injectForgotPassword(response) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/auth/inspect-owner" && request.method === "POST") return inspectOwner(request, env);
     if (url.pathname === "/api/auth/activate-owner" && request.method === "POST") return activateOwner(request, env);
     if (url.pathname === "/api/auth/forgot-password" && request.method === "POST") return forgotPassword(request, env);
     if (url.pathname === "/api/auth/reset-password" && request.method === "POST") return resetPassword(request, env);
