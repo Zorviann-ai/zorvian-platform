@@ -15,12 +15,55 @@
 @media(max-width:650px){.form-grid{grid-template-columns:1fr}.field.wide{grid-column:auto}.chart-row{grid-template-columns:80px minmax(80px,1fr) 48px}}
 .auth-gate{min-height:100vh;background:radial-gradient(circle at 75% 20%,rgba(242,166,27,.13),transparent 28%),linear-gradient(135deg,#090d11,#07131D 58%,#1a2630);display:grid;place-items:center;padding:28px}.auth-card{width:min(455px,100%);background:#fff;border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.35);overflow:hidden}.auth-brand{background:var(--dark);color:#fff;padding:23px 28px;border-bottom:3px solid var(--gold)}.auth-brand strong{font-size:20px;letter-spacing:.7px}.auth-brand span{color:var(--gold)}.auth-brand small{display:block;margin-top:6px;color:#aeb8bf;font-size:9px;letter-spacing:1.4px;text-transform:uppercase}.auth-body{padding:30px}.auth-body h1{font-size:27px;margin:0 0 8px}.auth-body>p{color:var(--muted);font-size:12px;line-height:1.55;margin:0 0 24px}.auth-body label{display:block;margin:14px 0 7px;color:#56636d;font-size:10px;font-weight:900;letter-spacing:.7px;text-transform:uppercase}.auth-body input{width:100%;border:1px solid var(--line);border-radius:9px;padding:13px;background:#fff;color:var(--text)}.auth-body input:focus{outline:2px solid rgba(242,166,27,.28);border-color:var(--gold)}.auth-body .primary{width:100%;margin-top:18px;min-height:48px}.auth-status{min-height:18px;margin-top:12px;color:var(--danger);font-size:11px;line-height:1.45}.auth-help{margin-top:23px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:10px;line-height:1.5}.auth-help a{color:#8a5b00;font-weight:900}.logout{display:none;margin-top:5px;border:0;background:transparent;color:var(--gold);padding:0;font-size:9px;font-weight:900;letter-spacing:.7px;text-transform:uppercase}.authenticated .logout{display:inline-block}.auth-locked .app{display:none}.authenticated .auth-gate{display:none}.auth-gate[hidden]{display:none!important}
 .hub-assistant{position:fixed;right:18px;bottom:18px;z-index:70;width:min(380px,calc(100vw - 30px));background:#07131Df4;color:white;border:1px solid #465465;border-radius:16px;box-shadow:0 22px 65px #0007;backdrop-filter:blur(14px);overflow:hidden}.hub-assistant.closed{width:62px;height:62px;border-radius:50%;cursor:pointer}.hub-head{display:flex;gap:10px;align-items:center;padding:12px;border-bottom:1px solid #33414e}.hub-avatar{width:38px;height:38px;flex:0 0 38px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#fff1a8,#E7B84B 42%,#6e4800);color:#111;font:900 18px Georgia}.hub-assistant.speaking .hub-avatar{animation:hubSpeak .5s ease-in-out infinite alternate}.hub-head strong{display:block}.hub-head small{color:#aeb9c5}.hub-min{margin-left:auto;border:0;background:transparent;color:#aeb9c5;font-size:20px;cursor:pointer}.hub-body{padding:12px}.hub-assistant.closed .hub-head{border:0;padding:11px}.hub-assistant.closed .hub-head>div:not(.hub-avatar),.hub-assistant.closed .hub-min,.hub-assistant.closed .hub-body{display:none}.hub-log{max-height:190px;overflow:auto;background:#0a0f15;border:1px solid #2b3743;border-radius:10px;padding:10px;white-space:pre-wrap;font-size:12px;color:#dce2e8;margin-bottom:9px}.hub-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.hub-actions button{border:1px solid #405061;background:#202d39;color:white;border-radius:999px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}.hub-chat{display:flex;gap:6px}.hub-chat input{flex:1;min-width:0;background:#080c11;border:1px solid #405061;border-radius:8px;color:white;padding:9px}.hub-chat button{border:0;background:#E7B84B;color:#111;border-radius:8px;padding:8px 11px;font-weight:900}.hub-voice{margin-top:7px;background:transparent;border:0;color:#aeb9c5;font-size:10px;cursor:pointer}@keyframes hubSpeak{to{transform:scale(1.1);box-shadow:0 0 28px #E7B84B88}}@media(max-width:720px){.hub-assistant{bottom:70px;right:10px}}
+
+/* Website-matched CAELOMERE visual identity */
+:root{--dark:#050505;--dark2:#080808;--gold:#d4af37;--gold2:#f3e0a8;--bg:#050505;--panel:#080808;--soft:#0d0d0d;--line:rgba(212,175,55,.22);--text:#fff9e8;--muted:#b7a36a;--success:#58b887;--danger:#d86a6a;--shadow:0 18px 55px rgba(0,0,0,.38)}
+body{background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}
+h1,h2,.workspace-head h2,.hero h1,.auth-body h1{font-family:Didot,"Bodoni 72","Bodoni MT",Baskerville,Georgia,"Times New Roman",serif;font-weight:400;letter-spacing:.025em}
+.topbar{height:78px;background:#050505;border-bottom:1px solid var(--line);padding:0 34px}
+.brand-mark{width:170px;height:58px;object-fit:contain;object-position:left center;border-radius:0}
+.brand-name,.auth-brand .brand-lockup strong{display:none}
+.brand-sub{color:var(--gold);border-left:1px solid var(--line);font-family:Georgia,serif}
+.client small{color:var(--gold)}.client strong{color:var(--gold2)}
+.layout{min-height:calc(100vh - 78px)}
+.sidebar{background:#080808;border-right:1px solid var(--line)}
+.nav-title{color:var(--gold)}
+.nav button{color:#c9b879;border-radius:0;border-bottom:1px solid transparent}
+.nav button:hover,.nav button.active{background:#111;color:var(--white,#fff9e8);border-color:var(--gold)}
+.main{background:#050505}
+.hero{background:linear-gradient(135deg,#080808,#11100c);border:1px solid var(--line);border-radius:0;box-shadow:var(--shadow)}
+.hero-label,.gold{color:var(--gold)}.hero p,.status{color:#c9b879}
+.card,.tool,.metric,.social-preview{background:#080808;border-color:var(--line);border-radius:0;color:var(--text)}
+.tool:hover{border-color:var(--gold);box-shadow:0 16px 42px rgba(0,0,0,.45)}
+.tool-number{background:#171208;color:var(--gold);border:1px solid var(--line);border-radius:0}
+.tool p,.workspace-head p,.capability span,.section-title span,.metric span,.field label,.social-note,.no-emoji-note{color:var(--muted)}
+.field textarea,.field input,.field select,.command input,.secondary,.upload-label{background:#050505;color:var(--text);border-color:var(--line);border-radius:0}
+.primary{background:var(--gold);color:#0a0a0a;border-radius:0;letter-spacing:.08em;text-transform:uppercase}
+.primary:hover{background:#f0cf70}
+.secondary{color:var(--gold2)}
+.result,.chart-panel{background:#0d0d0d;border-color:var(--line);border-radius:0}
+.auth-gate{background:radial-gradient(circle at 72% 18%,rgba(212,175,55,.13),transparent 28%),#050505}
+.auth-card{background:#080808;border:1px solid var(--line);border-radius:0;box-shadow:0 35px 100px rgba(0,0,0,.65)}
+.auth-brand{background:#050505;border-bottom:1px solid var(--gold);padding:18px 28px}
+.auth-brand .brand-lockup{min-height:64px}
+.auth-brand .brand-mark{width:min(285px,72vw);height:70px}
+.auth-brand small{color:var(--gold);font-family:Georgia,serif}
+.auth-body{background:#080808;color:var(--text)}
+.auth-body>p,.auth-help{color:var(--muted)}
+.auth-body label{color:var(--gold)}
+.auth-body input{background:#050505;color:var(--text);border-color:var(--line);border-radius:0}
+.auth-help{border-color:var(--line)}.auth-help a{color:var(--gold)}
+.hub-assistant{background:#080808f5;border-color:var(--line);border-radius:0}
+.hub-head{border-color:var(--line)}.hub-log,.hub-chat input{background:#050505;border-color:var(--line)}
+.hub-actions button{background:#11100c;border-color:var(--line);color:var(--gold2)}
+.mobile-nav{background:#080808;border-color:var(--line)}.mobile-nav button{background:#080808;color:var(--gold2)}
+@media(max-width:800px){.topbar{height:66px}.brand-mark{width:145px;height:50px}.layout{min-height:calc(100vh - 66px)}}
 </style>
 </head>
 <body class="auth-locked">
-<section id="authGate" class="auth-gate" aria-label="Secure client login"><div class="auth-card"><div class="auth-brand"><div class="brand-lockup"><img class="brand-mark" src="/caelomere-mark.svg" alt=""><strong>CAELOMERE <span>AI</span></strong></div><small>Celestial Core · Business Operating System</small></div><div class="auth-body"><h1>Secure Client Access</h1><p>Sign in with the account issued to your business. The operating system, customer information and business tools remain locked until authentication succeeds.</p><form id="loginForm"><label for="loginEmail">Email address</label><input id="loginEmail" type="email" autocomplete="username" required><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" minlength="10" required><button id="loginButton" class="primary" type="submit">SIGN IN TO BUSINESS CONTROL</button><div id="loginStatus" class="auth-status" role="alert"></div></form><div class="auth-help">Client accounts are issued by Caelomere. There is no public registration. For access, contact <a href="mailto:hello@caelomere.com?subject=Caelomere%20Client%20Access">hello@caelomere.com</a>.</div></div></div></section>
+<section id="authGate" class="auth-gate" aria-label="Secure client login"><div class="auth-card"><div class="auth-brand"><div class="brand-lockup"><img class="brand-mark" src="/caelomere-official-logo.jpg" alt=""><strong>CAELOMERE <span>AI</span></strong></div><small>Celestial Core · Business Operating System</small></div><div class="auth-body"><h1>Secure Client Access</h1><p>Sign in with the account issued to your business. The operating system, customer information and business tools remain locked until authentication succeeds.</p><form id="loginForm"><label for="loginEmail">Email address</label><input id="loginEmail" type="email" autocomplete="username" required><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" minlength="10" required><button id="loginButton" class="primary" type="submit">SIGN IN TO BUSINESS CONTROL</button><div id="loginStatus" class="auth-status" role="alert"></div></form><div class="auth-help">Client accounts are issued by Caelomere. There is no public registration. For access, contact <a href="mailto:hello@caelomere.com?subject=Caelomere%20Client%20Access">hello@caelomere.com</a>.</div></div></div></section>
 <div class="app">
-<header class="topbar"><div class="brand brand-lockup"><img class="brand-mark" src="/caelomere-mark.svg" alt=""><div><div class="brand-name">CAELOMERE <span class="gold">AI</span></div><div class="brand-sub">Celestial Core · Business Operating System</div></div></div><div class="client"><small>CLIENT CONTROL</small><strong id="clientBusinessName">Caelomere Business</strong><button id="logoutButton" class="logout" type="button">Sign out</button></div></header>
+<header class="topbar"><div class="brand brand-lockup"><img class="brand-mark" src="/caelomere-official-logo.jpg" alt=""><div><div class="brand-name">CAELOMERE <span class="gold">AI</span></div><div class="brand-sub">Celestial Core · Business Operating System</div></div></div><div class="client"><small>CLIENT CONTROL</small><strong id="clientBusinessName">Caelomere Business</strong><button id="logoutButton" class="logout" type="button">Sign out</button></div></header>
 <div class="layout">
 <aside class="sidebar">
 <div class="nav-title">Workspace</div><nav class="nav">
