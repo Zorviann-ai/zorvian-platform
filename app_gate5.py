@@ -1,7 +1,4 @@
-"""Gate 5 Core-connected API layer.
-
-Extends the existing Zorvian FastAPI app without changing the proven Gate 2-4 core.
-"""
+"""Gate 5 Core-connected API layer with Ox Alpha primary routing."""
 import os
 
 from fastapi import Depends, HTTPException, Request
@@ -24,8 +21,15 @@ _ALL_CAPABILITIES = frozenset({
     "legal-workflow", "finance-workflow", "security-analysis",
 })
 
+def _ox_configured():
+    return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
 
 def _registry():
+    profiles = [ProviderProfile("zorvian-local-beta", _ALL_CAPABILITIES, True, True, True, 40, 5, True)]
+    if _ox_configured():
+        # Ox is primary for normal reasoning. While its provider is anonymous,
+        # high-risk work remains on the controlled path and approval-gated.
+        profiles.insert(0, ProviderProfile("ox-alpha", _ALL_CAPABILITIES, True, True, False, 8, 1, True))
     profiles = []
     if os.getenv("OPENAI_API_KEY"):
         profiles.append(ProviderProfile("openai", _ALL_CAPABILITIES, True, True, True, 10, 20, True))
@@ -37,10 +41,8 @@ def _registry():
         profiles.append(ProviderProfile("zorvian-local-beta", _ALL_CAPABILITIES, True, True, True, 90, 1, True))
     return ProviderRegistry(profiles)
 
-
 def _service():
     return ConnectedIntelligenceService(_registry(), execute_provider)
-
 
 class IntelligenceRunIn(BaseModel):
     module: str = Field(min_length=2, max_length=50)
@@ -50,7 +52,6 @@ class IntelligenceRunIn(BaseModel):
     needs_tools: bool = False
     consequential_action: bool = False
 
-
 @app.middleware("http")
 async def gate5_beta_csp(request, call_next):
     response = await call_next(request)
@@ -59,21 +60,32 @@ async def gate5_beta_csp(request, call_next):
         response.headers["Cache-Control"] = "no-store"
     return response
 
-
 @app.get("/intelligence/capabilities")
 def intelligence_capabilities(u=Depends(current_user)):
-    configured = []
-    if os.getenv("OPENAI_API_KEY"): configured.append("openai")
-    if os.getenv("ANTHROPIC_API_KEY"): configured.append("anthropic")
-    if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"): configured.append("private-adapter")
-    return {
-        "modules": sorted(SUPPORTED_MODULES),
-        "guardian": "active",
-        "provider_mode": "connected" if configured else "controlled-local-beta",
-        "configured_provider_count": len(configured),
-        "external_actions": "approval-gated",
-    }
+configured = []
+if os.getenv("OPENAI_API_KEY"):
+    configured.append("openai")
+if os.getenv("ANTHROPIC_API_KEY"):
+    configured.append("anthropic")
 
+if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
+    configured.append("private-adapter")
+    mode = "approved-remote"
+elif _ox_configured():
+    configured.append("ox-alpha")
+    mode = "ox-alpha-primary"
+elif configured:
+    mode = "connected"
+else:
+    mode = "controlled-local-beta"
+
+return {
+    "modules": sorted(SUPPORTED_MODULES),
+    "guardian": "active",
+    "provider_mode": mode,
+    "configured_provider_count": len(configured),
+    "external_actions": "approval-gated",
+}
 
 @app.post("/intelligence/run")
 def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_user)):
@@ -82,21 +94,8 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
     rate_limit("intelligence:" + u["tenant_id"] + ":" + str(ip), 60, 3600)
     try:
         prompt = guardian_check(d.prompt)
-        ctx = WorkspaceContext(
-            tenant_id=u["tenant_id"],
-            user_id=u["id"],
-            role=u["role"],
-            module=d.module,
-            instructions=("Operate only inside this authenticated Zorvian workspace and module.",),
-        )
-        result = _service().run(ConnectedRequest(
-            module=d.module,
-            task=d.task,
-            prompt=prompt,
-            needs_retrieval=d.needs_retrieval,
-            needs_tools=d.needs_tools,
-            consequential_action=d.consequential_action,
-        ), ctx)
+        ctx = WorkspaceContext(tenant_id=u["tenant_id"], user_id=u["id"], role=u["role"], module=d.module, instructions=("Operate only inside this authenticated Zorvian workspace and module.",))
+        result = _service().run(ConnectedRequest(module=d.module, task=d.task, prompt=prompt, needs_retrieval=d.needs_retrieval, needs_tools=d.needs_tools, consequential_action=d.consequential_action), ctx)
     except PermissionError as e:
         audit(u, "guardian_intelligence_block", str(e), "warning")
         raise HTTPException(403, str(e))
@@ -108,26 +107,8 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
     except RuntimeError as e:
         audit(u, "intelligence_execution_failed", str(e), "warning")
         raise HTTPException(502, "Intelligence provider failed safely")
-
     audit(u, "intelligence_run", f"{d.module} · {d.task} · provider={result.provider}")
-    return {
-        "module": result.module,
-        "capability": result.capability,
-        "output": result.output,
-        "confidence": result.confidence,
-        "provider": result.provider,
-        "human_approval_required": result.human_approval_required,
-        "tool_execution_allowed": result.tool_execution_allowed,
-        "provenance": {
-            "task_id": result.provenance.task_id,
-            "source_refs": list(result.provenance.source_refs),
-            "assumptions": list(result.provenance.assumptions),
-            "needs_review": result.provenance.needs_review,
-        },
-    }
+    return {"module": result.module, "capability": result.capability, "output": result.output, "confidence": result.confidence, "provider": result.provider, "human_approval_required": result.human_approval_required, "tool_execution_allowed": result.tool_execution_allowed, "provenance": {"task_id": result.provenance.task_id, "source_refs": list(result.provenance.source_refs), "assumptions": list(result.provenance.assumptions), "needs_review": result.provenance.needs_review}}
 
-
-# Served from the same origin as Core so beta clients can authenticate without
-# weakening CORS or exposing provider credentials in downloadable HTML files.
 if os.path.isdir("beta"):
     app.mount("/beta", StaticFiles(directory="beta", html=True), name="beta")
