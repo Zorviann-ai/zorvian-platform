@@ -21,16 +21,18 @@ The identity should feel:
 
 ## Logo
 
-The primary mark is a luminous celestial **C** orbit rising above a reflective horizon.
+The primary mark is the approved black-and-gold Caelomere identity: a luminous vertical core within a precise geometric intelligence structure, paired with the Caelomere wordmark.
 
 It represents:
 
-- the horizon between possibility and delivery;
-- intelligence observing, reflecting and acting;
-- continuity, orbit and an evolving living system;
+- intelligence, structure and purposeful connection;
+- a luminous centre coordinating the wider system;
+- precision without losing imagination;
 - human judgement at the centre of autonomous capability.
 
-Primary asset: `public/caelomere-mark.svg`
+Primary asset: `public/caelomere-official-logo.jpg`
+
+The former three-part swirl and earlier orbit concepts are retired. They must not appear in customer-facing or internal product surfaces.
 
 ## Colour palette
 
