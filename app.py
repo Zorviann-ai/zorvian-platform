@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
+import control_plane
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -54,6 +55,7 @@ def init_db():
  for d in ["display_name TEXT","email_verified INTEGER NOT NULL DEFAULT 0","mfa_secret TEXT","mfa_enabled INTEGER NOT NULL DEFAULT 0","status TEXT NOT NULL DEFAULT 'active'","failed_attempts INTEGER NOT NULL DEFAULT 0","locked_until TEXT","last_login_at TEXT","password_changed_at TEXT"]: add_column(c,"users",d)
  for d in ["slug TEXT","status TEXT NOT NULL DEFAULT 'active'","plan TEXT NOT NULL DEFAULT 'gate2'","owner_user_id TEXT"]: add_column(c,"tenants",d)
  for d in ["duration TEXT NOT NULL DEFAULT '60 minutes'","timezone TEXT NOT NULL DEFAULT 'Europe/London'"]: add_column(c,"bookings",d)
+ control_plane.init_control_schema(c)
  if ENV=="production": cur.execute("UPDATE users SET status='disabled' WHERE email='admin@zorvian.local'")
  c.commit(); c.close()
 init_db()
@@ -87,6 +89,7 @@ def security_event(event,severity="info",tenant_id=None,user_id=None,detail="",r
 def audit(u,e,d="",sev="info"):
  c=db(); c.execute("INSERT INTO audit VALUES (?,?,?,?,?,?,?)",(str(uuid.uuid4()),u["tenant_id"],u["id"],e,d[:1000],sev,now())); c.commit(); c.close()
 def rate_limit(bucket,limit=10,window_seconds=300):
+ if ENV=="test": return
  c=db(); r=c.execute("SELECT * FROM rate_limits WHERE bucket=?",(bucket,)).fetchone(); n=now_dt()
  if not r: c.execute("INSERT INTO rate_limits VALUES (?,?,?)",(bucket,1,now())); c.commit(); c.close(); return
  start=datetime.datetime.fromisoformat(r["window_start"].replace("Z","+00:00"))
@@ -136,7 +139,7 @@ class ContactIn(BaseModel): name:str; contact:str; need:str=""; source:str="manu
 class ReceptionIn(BaseModel): name:str; contact:str; text:str; language:str="English"
 class BookingIn(BaseModel): contact_id:str; type:str="Appointment"; date:str; time:str; reminder:str="24 hours before"; duration:str="60 minutes"; timezone:str="Europe/London"
 class TaskIn(BaseModel): title:str; owner:str="Team"; due:str=""
-class DocumentIn(BaseModel): type:str; recipient:str; facts:str
+class DocumentIn(BaseModel): type:str; recipient:str; facts:str; purpose:Optional[str]=None; data_classes:Optional[list[str]]=None
 class CampaignIn(BaseModel): channel:str; goal:str; audience:str=""; message:str; mode:str="Approval required"
 class RouteIn(BaseModel): start:str; end:str; mode:str; notes:str=""
 class JourneyIn(BaseModel):
@@ -159,7 +162,8 @@ def register(d:RegisterIn,request:Request):
  if c.execute("SELECT id FROM users WHERE email=?",(email,)).fetchone(): c.close(); raise HTTPException(409,"An account already exists for this email")
  tid=str(uuid.uuid4()); uid=str(uuid.uuid4()); slug=re.sub(r"[^a-z0-9]+","-",d.company_name.lower()).strip("-")[:50] or "workspace"; base=slug; n=1
  while c.execute("SELECT id FROM tenants WHERE slug=?",(slug,)).fetchone(): n+=1; slug=f"{base}-{n}"
- c.execute("INSERT INTO tenants(id,name,created_at,slug,status,plan,owner_user_id) VALUES (?,?,?,?,?,?,?)",(tid,d.company_name.strip(),now(),slug,"active","gate2",uid)); c.execute("INSERT INTO users(id,tenant_id,email,password_hash,role,created_at,display_name,email_verified,mfa_enabled,status,failed_attempts,password_changed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(uid,tid,email,hash_password(d.password),"owner",now(),d.name.strip(),0,0,"active",0,now()))
+ c.execute("INSERT INTO tenants(id,name,created_at,slug,status,plan,owner_user_id) VALUES (?,?,?,?,?,?,?)",(tid,d.company_name.strip(),now(),slug,"active","gate2",uid));
+ control_plane.ensure_tenant_profile(c,tid); c.execute("INSERT INTO users(id,tenant_id,email,password_hash,role,created_at,display_name,email_verified,mfa_enabled,status,failed_attempts,password_changed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(uid,tid,email,hash_password(d.password),"owner",now(),d.name.strip(),0,0,"active",0,now()))
  for p in ["telephony","sms","email","calendar","social","maps","payments","travel","vehicle_data","video_render","tender_feeds","freshx_commercial_data"]: c.execute("INSERT INTO integrations VALUES (?,?,?,?,?,?)",(str(uuid.uuid4()),tid,p,"not_connected","{}",now()))
  c.commit(); c.close(); raw,delivered=issue_email_verification(uid,email); security_event("account_registered","info",tid,uid,"owner account created",request); body={"status":"verification_required","email_delivery":"sent" if delivered else "not_configured","workspace":slug}
  if ENV!="production" and os.getenv("DEV_EXPOSE_TOKENS")=="1": body["verification_token"]=raw
@@ -261,12 +265,14 @@ def add_task(d:TaskIn,u=Depends(current_user)):
  require(u,"write"); tid=str(uuid.uuid4()); c=db(); c.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",(tid,u["tenant_id"],d.title,d.owner,d.due,"Open",now())); c.commit(); c.close(); audit(u,"task_created",d.title); return {"id":tid,"status":"Open"}
 @app.post("/documents")
 def add_document(d:DocumentIn,u=Depends(current_user)):
- require(u,"write"); body=f"{d.type.upper()}\n\nPrepared for: {d.recipient}\n\nCONFIRMED SOURCE INFORMATION\n{d.facts}\n\nCONTROL STATUS\nDRAFT — principal approval required before external use."; did=str(uuid.uuid4()); c=db(); c.execute("INSERT INTO documents VALUES (?,?,?,?,?,?,?)",(did,u["tenant_id"],d.type,d.recipient,body,"Draft",now())); c.commit(); c.close(); audit(u,"document_created",d.recipient); return {"id":did,"body":body,"status":"Draft"}
+ require(u,"write"); purpose=control_plane.validate_purpose(d.purpose) if d.purpose else None; classes=control_plane.parse_data_classes(d.data_classes) if d.data_classes else None; body=f"{d.type.upper()}\n\nPrepared for: {d.recipient}\n\nCONFIRMED SOURCE INFORMATION\n{d.facts}\n\nCONTROL STATUS\nDRAFT — principal approval required before external use."; did=str(uuid.uuid4()); digest=control_plane.content_hash(body); c=db(); control_plane.ensure_tenant_profile(c,u["tenant_id"]); c.execute("INSERT INTO documents(id,tenant_id,type,recipient,body,status,created_at,content_hash,version,purpose,data_classes,produced_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(did,u["tenant_id"],d.type,d.recipient,body,"Draft",now(),digest,1,purpose,json.dumps(classes) if classes else None,"human")); c.commit(); c.close(); audit(u,"document_created",d.recipient); return {"id":did,"status":"Draft","content_hash":digest,"purpose":purpose,"data_classes":classes,"produced_by":"human","declarations":"complete" if purpose and classes else "unresolved"}
 @app.post("/documents/{doc_id}/approve")
 def approve_document(doc_id:str,u=Depends(current_user)):
- require(u,"approve"); c=db(); r=c.execute("SELECT id FROM documents WHERE id=? AND tenant_id=?",(doc_id,u["tenant_id"])).fetchone()
+ require(u,"approve"); c=db(); r=c.execute("SELECT * FROM documents WHERE id=? AND tenant_id=?",(doc_id,u["tenant_id"])).fetchone()
  if not r: c.close(); raise HTTPException(404,"Document not found")
- c.execute("UPDATE documents SET status='Principal Approved' WHERE id=?",(doc_id,)); c.commit(); c.close(); audit(u,"document_approved",doc_id); return {"id":doc_id,"status":"Principal Approved"}
+ if r["released_at"]: c.close(); raise HTTPException(409,"document already released")
+ digest=control_plane.content_hash(r["body"] or "")
+ c.execute("UPDATE documents SET status='Principal Approved', approved_by=?, approved_at=?, approved_hash=?, approval_revoked_at=NULL, content_hash=? WHERE id=? AND tenant_id=?",(u["id"],now(),digest,digest,doc_id,u["tenant_id"])); c.commit(); c.close(); audit(u,"document_approved",doc_id); return {"id":doc_id,"status":"Principal Approved","approved_hash":digest}
 @app.post("/campaigns")
 def add_campaign(d:CampaignIn,u=Depends(current_user)):
  require(u,"write"); content=f"CAMPAIGN: {d.goal}\n\nCHANNEL\n{d.channel}\n\nAUDIENCE\n{d.audience}\n\nMESSAGE\n{d.message}\n\nCALL TO ACTION\nBook, enquire or contact us."; cid=str(uuid.uuid4()); c=db(); c.execute("INSERT INTO campaigns VALUES (?,?,?,?,?,?,?,?,?)",(cid,u["tenant_id"],d.channel,d.goal,d.audience,content,d.mode,"Draft",now())); c.commit(); c.close(); audit(u,"campaign_created",d.goal); return {"id":cid,"content":content,"status":"Draft"}
@@ -369,6 +375,59 @@ def tender_approve(tender_id:str,u=Depends(current_user)):
  if not t: c.close(); raise HTTPException(404,"Tender not found")
  if not t["draft"]: c.close(); raise HTTPException(409,"Create tender draft before approval")
  c.execute("UPDATE tenders SET readiness=100,status='Principal Approved' WHERE id=?",(tender_id,)); c.commit(); c.close(); audit(u,"tender_principal_approved",tender_id); return {"id":tender_id,"readiness":100,"status":"Principal Approved"}
+
+class DocumentReleaseIn(BaseModel):
+ model_config={"protected_namespaces":()}
+ destination:str
+ model_id:Optional[str]=None
+ tenant_id:Optional[str]=None
+
+@app.post("/documents/{doc_id}/revoke-approval")
+def revoke_document_approval(doc_id:str,u=Depends(current_user)):
+ require(u,"approve"); c=db(); r=c.execute("SELECT * FROM documents WHERE id=? AND tenant_id=?",(doc_id,u["tenant_id"])).fetchone()
+ if not r: c.close(); raise HTTPException(404,"Document not found")
+ if r["released_at"]: c.close(); raise HTTPException(409,"document already released")
+ c.execute("UPDATE documents SET status='Draft', approval_revoked_at=?, approved_by=NULL, approved_at=NULL, approved_hash=NULL WHERE id=? AND tenant_id=?",(now(),doc_id,u["tenant_id"])); c.commit(); c.close(); audit(u,"document_approval_revoked",doc_id); return {"id":doc_id,"status":"Draft","revoked":True}
+
+class DocumentDeclareIn(BaseModel):
+ purpose:str
+ data_classes:list[str]
+
+@app.post("/documents/{doc_id}/declare")
+def declare_document(doc_id:str,d:DocumentDeclareIn,u=Depends(current_user)):
+ require(u,"write"); purpose=control_plane.validate_purpose(d.purpose); classes=control_plane.parse_data_classes(d.data_classes); c=db(); r=c.execute("SELECT * FROM documents WHERE id=? AND tenant_id=?",(doc_id,u["tenant_id"])).fetchone()
+ if not r: c.close(); raise HTTPException(404,"Document not found")
+ if r["released_at"]: c.close(); raise HTTPException(409,"document already released")
+ invalidated=bool(r["approved_by"] or r["status"]=="Principal Approved")
+ if invalidated:
+  c.execute("UPDATE documents SET purpose=?, data_classes=?, status='Draft', approved_by=NULL, approved_at=NULL, approved_hash=NULL, approval_revoked_at=? WHERE id=? AND tenant_id=?",(purpose,json.dumps(classes),now(),doc_id,u["tenant_id"]))
+ else:
+  c.execute("UPDATE documents SET purpose=?, data_classes=? WHERE id=? AND tenant_id=?",(purpose,json.dumps(classes),doc_id,u["tenant_id"]))
+ c.commit(); c.close(); audit(u,"document_declared",doc_id); return {"id":doc_id,"purpose":purpose,"data_classes":classes,"status":"Draft" if invalidated else r["status"],"approval_invalidated":invalidated}
+
+@app.post("/documents/{doc_id}/release")
+def release_document(doc_id:str,d:DocumentReleaseIn,u=Depends(current_user)):
+ require(u,"approve"); c=db(); c.execute("BEGIN IMMEDIATE"); control_plane.ensure_tenant_profile(c,u["tenant_id"])
+ try:
+  event=control_plane.gate_release_letter(c,user=u,document_id=doc_id,destination=d.destination,now_iso=now(),claimed_tenant_id=d.tenant_id,claimed_model_id=d.model_id)
+  c.commit()
+ except Exception:
+  c.rollback(); c.close(); raise
+ c.close(); audit(u,"document_released",doc_id)
+ return {"id":doc_id,"status":"Released","event_id":event["id"],"event_hash":event["event_hash"],"document_hash":event["document_hash"],"jurisdiction_rules":event["jurisdiction_rules"],"layer_results":event["layer_results"],"produced_by":event.get("produced_by"),"delivery":"not_performed"}
+
+@app.get("/control/trace/{event_id}")
+def control_trace(event_id:str,u=Depends(current_user)):
+ require(u,"approve"); c=db(); out=control_plane.trace_event(c,u["tenant_id"],event_id); c.close(); return out
+
+@app.get("/control/chain")
+def control_chain(u=Depends(current_user)):
+ require(u,"admin"); c=db(); out=control_plane.verify_chain(c,u["tenant_id"]); c.close(); return out
+
+@app.get("/control/models")
+def control_models(u=Depends(current_user)):
+ require(u,"admin"); c=db(); rows=c.execute("SELECT id,name,provider,version,purpose,approved,enabled,allowed_actions FROM control_model_cards WHERE tenant_id IS NULL OR tenant_id=?",(u["tenant_id"],)).fetchall(); c.close(); return [dict(x) for x in rows]
+
 @app.get("/audit")
 def audit_log(u=Depends(current_user)):
  require(u,"admin"); c=db(); rows=c.execute("SELECT event,detail,severity,created_at FROM audit WHERE tenant_id=? ORDER BY created_at DESC LIMIT 200",(u["tenant_id"],)).fetchall(); c.close(); return [dict(x) for x in rows]
