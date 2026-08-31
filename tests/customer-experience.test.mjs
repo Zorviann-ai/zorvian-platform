@@ -35,14 +35,16 @@ test('AI specialist identities no longer expose the legacy product brand', async
 
 test('main hub keeps Caelomere present while the user works', async () => {
   const html=await read('public/index.html');
-  for(const marker of ['caelomere-official-logo.jpg','Caelomere is here','OPEN CRM','OPEN SOCIAL','OPEN TV STUDIO','PUBLIC WEBSITE','SPOKEN ANSWERS ON',"api('/ai/ask'"]) assert.ok(html.includes(marker),marker);
+  for(const marker of ['caelomere-official-logo.jpg','Celeste is here','OPEN CRM','OPEN SOCIAL','OPEN TV STUDIO','PUBLIC WEBSITE','SPOKEN ANSWERS ON','SpeechRecognition',"api('/ai/ask'"]) assert.ok(html.includes(marker),marker);
   assert.ok(html.includes('SpeechSynthesisUtterance'));
 });
 
-test('new brand assets define the celestial identity', async () => {
-  const [svg,css]=await Promise.all([read('public/caelomere-mark.svg'),read('public/caelomere-brand.css')]);
-  assert.match(svg,/celestial C orbit/i);
-  for(const colour of ['#07131D','#102A3A','#28D7C0','#E9F1ED','#E7B84B','#7B6CF6']) assert.ok(svg.includes(colour)||css.includes(colour),colour);
+test('approved brand assets define the Caelomere identity', async () => {
+  const [logo,brand,html]=await Promise.all([fs.stat(new URL('../public/caelomere-official-logo.jpg',import.meta.url)),read('BRAND.md'),read('public/index.html')]);
+  assert.ok(logo.size>1000);
+  assert.match(brand,/black-and-gold Caelomere identity/i);
+  assert.match(brand,/three-part swirl.*retired/i);
+  assert.match(html,/caelomere-official-logo\.jpg/i);
 });
 
 test('core identity is Caelomere Celestial Core', async () => {
