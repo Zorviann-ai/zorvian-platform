@@ -15,6 +15,7 @@ from intelligence.executor import execute_provider
 from intelligence.guard import guardian_check
 from intelligence.providers import ProviderProfile, ProviderRegistry
 from intelligence.resilience import status_snapshot
+from intelligence.legal import assess, parse_ai_legal_payload
 
 
 _ALL_CAPABILITIES = frozenset({
@@ -58,6 +59,22 @@ def _service():
     return ConnectedIntelligenceService(_registry(), execute_provider)
 
 
+class LegalAssessIn(BaseModel):
+    module: str = Field(default="legal-pathways", min_length=2, max_length=50)
+    action: str = Field(min_length=2, max_length=80)
+    jurisdiction: str | None = None
+    matter_type: str = "general"
+    facts: str = Field(default="", max_length=12000)
+    document_id: str | None = None
+    document_hash: str | None = None
+    consequential_action: bool = False
+    requested_outcome: str = Field(default="", max_length=500)
+    data_classes: list[str] = Field(default_factory=list)
+    tenant_id: str | None = None
+    approval_present: bool = False
+    human_legal_review_present: bool = False
+
+
 class IntelligenceRunIn(BaseModel):
     module: str = Field(min_length=2, max_length=50)
     task: str = Field(min_length=2, max_length=120)
@@ -99,6 +116,74 @@ def intelligence_capabilities(u=Depends(current_user)):
         "external_actions": "approval-gated",
     }
 
+
+@app.post("/legal/intelligence/assess")
+def legal_intelligence_assess(d: LegalAssessIn, request: Request, u=Depends(current_user)):
+    require(u, "write")
+    ip, _ = request_fingerprint(request)
+    rate_limit("legal-assess:" + u["tenant_id"] + ":" + str(ip), 60, 3600)
+    audit(u, "legal_assessment_started", d.action)
+    ai_payload = None
+    try:
+        prompt = (
+            "Return JSON only with keys risk_level, applicable_domains, missing_evidence, "
+            "legal_review_required, approval_required, execution_recommendation, reasoning_summary, assumptions. "
+            "Do not invent case law or statute citations. Jurisdiction: "
+            f"{d.jurisdiction or 'unspecified'}. Action: {d.action}. Facts: {d.facts[:4000]}"
+        )
+        ctx = WorkspaceContext(tenant_id=u["tenant_id"], user_id=u["id"], role=u["role"], module="legal-pathways", instructions=("Do not invent legal citations.",))
+        result = _service().run(ConnectedRequest(module="legal-pathways", task="legal-control-assessment", prompt=prompt, consequential_action=d.consequential_action), ctx)
+        ai_payload = parse_ai_legal_payload(result.output)
+        if d.consequential_action and ai_payload is None:
+            audit(u, "legal_control_blocked", "malformed AI legal decision")
+            raise HTTPException(502, {"error": "ai_provider_failed", "message": "Legal Intelligence could not validate a structured legal decision."})
+    except LookupError as exc:
+        audit(u, "legal_control_blocked", f"provider unavailable:{exc}", "warning")
+        if d.consequential_action:
+            raise HTTPException(503, {"error": "ai_provider_unavailable", "message": "Celestial Core intelligence is temporarily unavailable. Please try again shortly."})
+    except RuntimeError as exc:
+        audit(u, "legal_control_blocked", f"provider failed:{exc}", "warning")
+        if d.consequential_action:
+            raise HTTPException(502, {"error": "ai_provider_failed", "message": "Celestial Core could not complete this intelligence request. Please try again shortly."})
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+
+    try:
+        assessment = assess(
+            tenant_id=u["tenant_id"],
+            user_id=u["id"],
+            role=u["role"],
+            module=d.module or "legal-pathways",
+            action=d.action,
+            facts=d.facts,
+            jurisdiction_raw=d.jurisdiction,
+            matter_type=d.matter_type,
+            document_id=d.document_id,
+            document_hash=d.document_hash,
+            consequential_action=d.consequential_action,
+            requested_outcome=d.requested_outcome,
+            data_classes=d.data_classes,
+            approval_present=d.approval_present,
+            human_legal_review_present=d.human_legal_review_present,
+            payload_tenant_id=d.tenant_id,
+            ai_payload=ai_payload,
+        )
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+
+    if assessment.execution_allowed:
+        audit(u, "legal_control_passed", assessment.legal_assessment_id)
+        audit(u, "legal_assessment_completed", assessment.legal_assessment_id)
+    else:
+        audit(u, "legal_control_blocked", assessment.legal_assessment_id)
+        if assessment.evidence_state == "insufficient":
+            audit(u, "legal_evidence_insufficient", assessment.legal_assessment_id)
+        if assessment.authority_state in {"missing", "conflicting"}:
+            audit(u, "legal_authority_missing", assessment.legal_assessment_id)
+        if assessment.human_legal_review_required:
+            audit(u, "legal_review_required", assessment.legal_assessment_id)
+        audit(u, "legal_assessment_completed", assessment.legal_assessment_id)
+    return assessment.as_public()
 
 @app.post("/intelligence/run")
 def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_user)):
