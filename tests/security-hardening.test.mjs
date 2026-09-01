@@ -6,12 +6,21 @@ test('password hashing is versioned and uses a production-strength work factor',
   const worker = await fs.readFile(new URL('../src/worker.js', import.meta.url), 'utf8');
   const reset = await fs.readFile(new URL('../src/auth-reset.js', import.meta.url), 'utf8');
   assert.match(worker, /PASSWORD_HASH_ITERATIONS = 210000/);
-  assert.match(reset, /PASSWORD_HASH_ITERATIONS = 100000/);
+  assert.match(reset, /PASSWORD_HASH_ITERATIONS = 210000/);
   for (const source of [worker, reset]) {
     assert.match(source, /pbkdf2_sha256/);
   }
+  assert.match(reset, /pbkdf2_sha256\$\$\{PASSWORD_HASH_ITERATIONS\}\$\$\{salt\}\$/);
   assert.match(worker, /iterations: 10000/);
   assert.match(worker, /secureEqual\(candidate, legacy\)/);
+});
+
+test('password reset success offers a secure return to the portal login', async () => {
+  const page = await fs.readFile(new URL('../public/reset-password.html', import.meta.url), 'utf8');
+  assert.match(page, /id="enterCore"/);
+  assert.match(page, /href="\/"/);
+  assert.match(page, /ENTER CELESTIAL CORE/);
+  assert.match(page, /enterCore\.hidden=false/);
 });
 
 test('MCP bearer authentication is timing-safe and CORS is allowlisted', async () => {

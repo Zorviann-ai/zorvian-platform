@@ -2,7 +2,7 @@ import app from "./entry.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" };
 const RESET_TTL_MS = 30 * 60 * 1000;
-const PASSWORD_HASH_ITERATIONS = 100000;
+const PASSWORD_HASH_ITERATIONS = 210000;
 
 const OWNER_EMAIL = "hello@caelomere.com";
 const OWNER_ACTIVATION_TOKEN_HASH = "0902aec778b70053ed45be58b14c9d8a1748a5351d9e3c7280a64968e6c2529f";
@@ -36,7 +36,7 @@ async function hashPassword(password, salt = crypto.randomUUID()) {
     key,
     256
   );
-  return `pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${salt}${btoa(String.fromCharCode(...new Uint8Array(bits)))}`;
+  return `pbkdf2_sha256$${PASSWORD_HASH_ITERATIONS}$${salt}$${btoa(String.fromCharCode(...new Uint8Array(bits)))}`;
 }
 
 async function sha256(text) {
@@ -133,28 +133,33 @@ async function activateOwner(request, env) {
 }
 
 async function forgotPassword(request, env) {
-  if (!env.DB) return json({ error: "database_unavailable" }, 503);
-  await ensureResetTable(env);
-  let body;
-  try { body = await request.json(); } catch { return json({ error: "invalid_request" }, 400); }
-  const email = String(body?.email || "").trim().toLowerCase();
-  if (!email || !email.includes("@")) return json({ error: "email_required" }, 400);
+  try {
+    if (!env.DB) return json({ error: "database_unavailable" }, 503);
+    await ensureResetTable(env);
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "invalid_request" }, 400); }
+    const email = String(body?.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) return json({ error: "email_required" }, 400);
 
-  const user = await env.DB.prepare("SELECT id,email FROM users WHERE lower(email)=?").bind(email).first();
-  if (!user) return json({ ok: true, message: "If that account exists, a reset email has been sent." });
+    const user = await env.DB.prepare("SELECT id,email FROM users WHERE lower(email)=?").bind(email).first();
+    if (!user) return json({ ok: true, message: "If that account exists, a reset email has been sent." });
 
-  const token = `${uid()}${uid()}`.replaceAll("-", "");
-  const tokenHash = await sha256(token);
-  const expiresAt = new Date(Date.now() + RESET_TTL_MS).toISOString();
+    const token = `${uid()}${uid()}`.replaceAll("-", "");
+    const tokenHash = await sha256(token);
+    const expiresAt = new Date(Date.now() + RESET_TTL_MS).toISOString();
 
-  await env.DB.prepare("DELETE FROM password_resets WHERE user_id=? OR expires_at<=?").bind(user.id, nowIso()).run();
-  await env.DB.prepare("INSERT INTO password_resets (id,user_id,token_hash,expires_at) VALUES (?,?,?,?)")
-    .bind(uid(), user.id, tokenHash, expiresAt).run();
+    await env.DB.prepare("DELETE FROM password_resets WHERE user_id=? OR expires_at<=?").bind(user.id, nowIso()).run();
+    await env.DB.prepare("INSERT INTO password_resets (id,user_id,token_hash,expires_at) VALUES (?,?,?,?)")
+      .bind(uid(), user.id, tokenHash, expiresAt).run();
 
-  const origin = new URL(request.url).origin;
-  const resetUrl = `${origin}/reset-password.html?token=${encodeURIComponent(token)}`;
-  await sendResetEmail(env, user.email, resetUrl);
-  return json({ ok: true, message: "If that account exists, a reset email has been sent." });
+    const origin = new URL(request.url).origin;
+    const resetUrl = `${origin}/reset-password.html?token=${encodeURIComponent(token)}`;
+    await sendResetEmail(env, user.email, resetUrl);
+    return json({ ok: true, message: "If that account exists, a reset email has been sent." });
+  } catch (error) {
+    console.error("Password reset request failed", error);
+    return json({ error: "password_reset_unavailable", message: "Password reset is temporarily unavailable. Please try again." }, 503);
+  }
 }
 
 async function resetPassword(request, env) {
@@ -211,7 +216,7 @@ async function injectForgotPassword(response) {
         status.textContent=data.message||'If that account exists, a reset email has been sent.';
       }catch(error){
         status.style.color='var(--danger)';
-        status.textContent='Password reset could not be sent. Please try again.';
+        status.textContent=error.message||'Password reset could not be sent. Please try again.';
       }finally{button.disabled=false}
     }
     async function signOut(){`
