@@ -177,7 +177,7 @@ def verify_email(d:VerifyEmailIn,request:Request):
 def verify_email_link(token:str,request:Request):
  c=db(); r=c.execute("SELECT * FROM email_verifications WHERE token_hash=? AND used_at IS NULL AND expires_at>?",(hash_token(token),now())).fetchone()
  if not r: c.close(); raise HTTPException(400,"Verification link is invalid or expired")
- u=c.execute("SELECT * FROM users WHERE id=?",(r["user_id"],)).fetchone(); c.execute("UPDATE users SET email_verified=1 WHERE id=?",(r["user_id"],)); c.execute("UPDATE email_verifications SET used_at=? WHERE id=?",(now(),r["id"])); c.commit(); c.close(); security_event("email_verified","info",u["tenant_id"],u["id"],"email verified by staging link",request); return {"status":"verified","message":"Your Zorvian staging account is verified. You can now sign in."}
+ u=c.execute("SELECT * FROM users WHERE id=?",(r["user_id"],)).fetchone(); c.execute("UPDATE users SET email_verified=1 WHERE id=?",(r["user_id"],)); c.execute("UPDATE email_verifications SET used_at=? WHERE id=?",(now(),r["id"])); c.commit(); c.close(); security_event("email_verified","info",u["tenant_id"],u["id"],"email verified by staging link",request); return {"status":"verified","message":"Your Caelomere account is verified. You can now sign in."}
 @app.post("/auth/login")
 def login(d:LoginIn,request:Request):
  email=norm_email(d.email); ip,_=request_fingerprint(request); rate_limit("login:"+str(ip),30,300); rate_limit("login-email:"+privacy_hash(email),15,300); c=db(); r=c.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
