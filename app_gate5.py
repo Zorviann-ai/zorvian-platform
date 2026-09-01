@@ -20,6 +20,7 @@ from intelligence.financial import assess as assess_financial, parse_ai_financia
 from intelligence.guardian import assess as assess_guardian, parse_ai_guardian_payload
 from intelligence.orchestrator import decide as constitutional_decide
 from intelligence.execution import prepare as prepare_execution, load_ticket, consume_execution_ticket
+from intelligence.execution_adapters import AdapterDenied, dry_run_execution_plan, execute_execution_plan, load_plan, prepare_execution_plan, public_plan
 from app import db as core_db
 
 
@@ -687,6 +688,115 @@ def execution_ticket_get(ticket_id: str, u=Depends(current_user)):
     if not ticket:
         raise HTTPException(404, "execution ticket not found")
     return ticket.as_public()
+
+
+class ExecutionPlanIn(BaseModel):
+    ticket_id: str = Field(min_length=8, max_length=80)
+    adapter_id: str = Field(min_length=3, max_length=80)
+    action: str = Field(min_length=2, max_length=80)
+    payload: dict = Field(default_factory=dict)
+    destination: str | None = None
+    resource_id: str | None = None
+    resource_hash: str | None = None
+    tenant_id: str | None = None
+    claimed_allow: bool = False
+    claimed_approval: str | None = None
+
+
+class ExecutionPlanFollowIn(BaseModel):
+    payload: dict | None = None
+    destination: str | None = None
+    resource_id: str | None = None
+    resource_hash: str | None = None
+
+
+@app.post("/api/execution/plans")
+def execution_plan_create(d: ExecutionPlanIn, request: Request, u=Depends(current_user)):
+    require(u, "write")
+    if d.tenant_id and d.tenant_id != u["tenant_id"]:
+        raise HTTPException(403, "Tenant identity cannot be supplied by the client payload")
+    c = core_db()
+    try:
+        plan = prepare_execution_plan(
+            c,
+            tenant_id=u["tenant_id"],
+            user_id=u["id"],
+            ticket_id=d.ticket_id,
+            adapter_id=d.adapter_id,
+            action=d.action,
+            payload=d.payload,
+            destination=d.destination,
+            resource_id=d.resource_id,
+            resource_hash=d.resource_hash,
+            claimed_allow=d.claimed_allow,
+            claimed_approval=d.claimed_approval,
+            env=os.getenv("ZORVIAN_ENV", "prod"),
+        )
+    except AdapterDenied as exc:
+        c.close()
+        audit(u, "execution_adapter_rejected", str(exc), "warning")
+        raise HTTPException(403, str(exc))
+    c.close()
+    audit(u, "execution_plan_prepared", plan.get("execution_plan_id") or plan.get("id"))
+    return public_plan(plan, include_destination=True)
+
+
+@app.get("/api/execution/plans/{plan_id}")
+def execution_plan_get(plan_id: str, u=Depends(current_user)):
+    require(u, "write")
+    c = core_db()
+    plan = load_plan(c, plan_id, u["tenant_id"])
+    c.close()
+    if not plan:
+        raise HTTPException(404, "execution plan not found")
+    return public_plan(plan, include_destination=True)
+
+
+@app.post("/api/execution/plans/{plan_id}/dry-run")
+def execution_plan_dry_run(plan_id: str, d: ExecutionPlanFollowIn | None = None, u=Depends(current_user)):
+    require(u, "write")
+    c = core_db()
+    try:
+        out = dry_run_execution_plan(
+            c,
+            tenant_id=u["tenant_id"],
+            user_id=u["id"],
+            plan_id=plan_id,
+            payload=None if d is None else d.payload,
+            destination=None if d is None else d.destination,
+        )
+    except AdapterDenied as exc:
+        c.close()
+        audit(u, "execution_plan_blocked", str(exc), "warning")
+        raise HTTPException(403, str(exc))
+    c.close()
+    audit(u, "execution_dry_run_completed", plan_id)
+    return out
+
+
+@app.post("/api/execution/plans/{plan_id}/execute")
+def execution_plan_execute(plan_id: str, d: ExecutionPlanFollowIn | None = None, u=Depends(current_user)):
+    require(u, "write")
+    c = core_db()
+    try:
+        out = execute_execution_plan(
+            c,
+            tenant_id=u["tenant_id"],
+            user_id=u["id"],
+            plan_id=plan_id,
+            payload=None if d is None else d.payload,
+            destination=None if d is None else d.destination,
+            resource_id=None if d is None else d.resource_id,
+            resource_hash=None if d is None else d.resource_hash,
+        )
+    except AdapterDenied as exc:
+        c.close()
+        audit(u, "execution_plan_blocked", str(exc), "warning")
+        status = 403
+        raise HTTPException(status, str(exc))
+    c.close()
+    audit(u, "execution_internal_completed", plan_id)
+    return out
 
 
 @app.post("/intelligence/run")
