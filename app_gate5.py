@@ -19,6 +19,8 @@ from intelligence.legal import assess, parse_ai_legal_payload
 from intelligence.financial import assess as assess_financial, parse_ai_financial_payload
 from intelligence.guardian import assess as assess_guardian, parse_ai_guardian_payload
 from intelligence.orchestrator import decide as constitutional_decide
+from intelligence.execution import prepare as prepare_execution, load_ticket, consume_execution_ticket
+from app import db as core_db
 
 
 _ALL_CAPABILITIES = frozenset({
@@ -177,6 +179,41 @@ class OrchestratorDecideIn(BaseModel):
     retention_state: str | None = None
     legal_hold_state: str | None = None
     intent: str = "execute"
+
+
+class ExecutionPrepareIn(BaseModel):
+    module: str = Field(default="constitutional-core", min_length=2, max_length=50)
+    action: str = Field(min_length=2, max_length=80)
+    facts: str = Field(default="", max_length=12000)
+    resource_type: str | None = None
+    resource_id: str | None = None
+    resource_hash: str | None = None
+    current_resource_hash: str | None = None
+    proposed_action: str | None = None
+    consequential_action: bool = False
+    requested_outcome: str = Field(default="", max_length=500)
+    tenant_id: str | None = None
+    claimed_outcome: str | None = None
+    claimed_state: str | None = None
+    claimed_execution_allowed: bool | None = None
+    claimed_expires_at: str | None = None
+    idempotency_key: str | None = None
+    approvals: list[dict] = Field(default_factory=list)
+    approval_present: bool = False
+    approval_count: int = 0
+    identity_state: str | None = None
+    session_state: str | None = None
+    incident_state: str | None = None
+    legal_hold_state: str | None = None
+    jurisdiction: str | None = None
+    financial_domain: str | None = None
+    amount: float | None = None
+    currency: str | None = None
+    human_legal_review_present: bool = False
+    human_financial_review_present: bool = False
+    beneficiary_evidence_present: bool = False
+    aml_kyc_system_state: str | None = None
+    sanctions_system_state: str | None = None
 
 
 class IntelligenceRunIn(BaseModel):
@@ -577,6 +614,79 @@ def constitutional_orchestrator_decide(d: OrchestratorDecideIn, request: Request
     if "guardian" in decision.blocking_layers:
         audit(u, "constitutional_guardian_gate_blocked", decision.guardian_assessment_id or "")
     return decision.as_public()
+
+
+@app.post("/core/execution/prepare")
+def execution_prepare(d: ExecutionPrepareIn, request: Request, u=Depends(current_user)):
+    require(u, "write")
+    ip, _ = request_fingerprint(request)
+    rate_limit("execution-prepare:" + u["tenant_id"] + ":" + str(ip), 60, 3600)
+    audit(u, "execution_prepare_started", d.action)
+    c = core_db()
+    try:
+        ticket = prepare_execution(
+            tenant_id=u["tenant_id"],
+            user_id=u["id"],
+            role=u["role"],
+            module=d.module,
+            action=d.action,
+            facts=d.facts,
+            resource_type=d.resource_type,
+            resource_id=d.resource_id,
+            resource_hash=d.resource_hash,
+            current_resource_hash=d.current_resource_hash,
+            proposed_action=d.proposed_action,
+            consequential_action=d.consequential_action,
+            requested_outcome=d.requested_outcome,
+            payload_tenant_id=d.tenant_id,
+            claimed_outcome=d.claimed_outcome,
+            claimed_state=d.claimed_state,
+            claimed_execution_allowed=d.claimed_execution_allowed,
+            claimed_expires_at=d.claimed_expires_at,
+            idempotency_key=d.idempotency_key,
+            approvals=d.approvals or None,
+            approval_present=d.approval_present,
+            approval_count=d.approval_count,
+            connection=c,
+            user_status=u.get("status"),
+            identity_state=d.identity_state,
+            session_state=d.session_state,
+            incident_state=d.incident_state,
+            legal_hold_state=d.legal_hold_state,
+            jurisdiction_raw=d.jurisdiction,
+            financial_domain=d.financial_domain,
+            amount=d.amount,
+            currency=d.currency,
+            human_legal_review_present=d.human_legal_review_present,
+            human_financial_review_present=d.human_financial_review_present,
+            beneficiary_evidence_present=d.beneficiary_evidence_present,
+            aml_kyc_system_state=d.aml_kyc_system_state,
+            sanctions_system_state=d.sanctions_system_state,
+        )
+    except PermissionError as exc:
+        c.close()
+        audit(u, "execution_cross_tenant_attempt", str(exc), "warning")
+        security_event("execution_cross_tenant_attempt", "warning", u["tenant_id"], u["id"], "payload tenant rejected", request)
+        raise HTTPException(403, str(exc))
+    c.close()
+    for event_name in ticket.audit_events:
+        audit(u, event_name, ticket.execution_ticket_id, "warning" if "denied" in event_name or "block" in event_name else "info")
+        if event_name in {"execution_cross_tenant_attempt", "execution_replay_blocked", "execution_action_mismatch"}:
+            security_event(event_name, "warning", u["tenant_id"], u["id"], ticket.execution_ticket_id, request)
+    public = ticket.as_public()
+    public["external_execution_enabled"] = False
+    return public
+
+
+@app.get("/core/execution/tickets/{ticket_id}")
+def execution_ticket_get(ticket_id: str, u=Depends(current_user)):
+    require(u, "write")
+    c = core_db()
+    ticket = load_ticket(c, ticket_id, u["tenant_id"])
+    c.close()
+    if not ticket:
+        raise HTTPException(404, "execution ticket not found")
+    return ticket.as_public()
 
 
 @app.post("/intelligence/run")
