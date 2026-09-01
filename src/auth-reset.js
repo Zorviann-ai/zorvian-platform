@@ -2,7 +2,7 @@ import app from "./entry.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" };
 const RESET_TTL_MS = 30 * 60 * 1000;
-const PASSWORD_HASH_ITERATIONS = 210000;
+const PASSWORD_HASH_ITERATIONS = 100000;
 
 const OWNER_EMAIL = "hello@caelomere.com";
 const OWNER_ACTIVATION_TOKEN_HASH = "0902aec778b70053ed45be58b14c9d8a1748a5351d9e3c7280a64968e6c2529f";
