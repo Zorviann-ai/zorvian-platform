@@ -15,6 +15,7 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException
+from intelligence.legal import assess_document_release
 
 ALLOWED_DATA_CLASSES = {
     "public",
@@ -380,6 +381,18 @@ def gate_release_letter(
     layers = evaluate_layers(profile, "release_letter", data_classes, model["produced_by"])
     if layers["legal_intelligence"]["result"] == "review_required":
         raise FailClosed("legal intelligence review required")
+
+    legal = assess_document_release(user=user, document=doc, profile=profile, destination=destination)
+    layers["legal_intelligence"]["assessment_id"] = legal.legal_assessment_id
+    layers["legal_intelligence"]["control"] = {
+        "execution_allowed": legal.execution_allowed,
+        "risk_level": legal.risk_level,
+        "authority_state": legal.authority_state,
+        "evidence_state": legal.evidence_state,
+        "human_legal_review_required": legal.human_legal_review_required,
+    }
+    if not legal.execution_allowed:
+        raise FailClosed("legal intelligence blocked controlled release: " + legal.reasoning_summary)
     if layers["financial_intelligence"]["result"] == "review_required":
         raise FailClosed("financial intelligence review required")
     guardian_checks = [
