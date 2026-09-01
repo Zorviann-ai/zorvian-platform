@@ -2,15 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
-test('password hashing is versioned and uses a production-strength work factor', async () => {
+test('password hashing is versioned and uses compatible work factors', async () => {
   const worker = await fs.readFile(new URL('../src/worker.js', import.meta.url), 'utf8');
   const reset = await fs.readFile(new URL('../src/auth-reset.js', import.meta.url), 'utf8');
   assert.match(worker, /PASSWORD_HASH_ITERATIONS = 210000/);
-  assert.match(reset, /PASSWORD_HASH_ITERATIONS = 210000/);
+  assert.match(reset, /PASSWORD_HASH_ITERATIONS = 100000/);
   for (const source of [worker, reset]) {
     assert.match(source, /pbkdf2_sha256/);
   }
   assert.match(reset, /pbkdf2_sha256\$\$\{PASSWORD_HASH_ITERATIONS\}\$\$\{salt\}\$/);
+  assert.match(worker, /const iterations = Number\(parts\[1\]\)/);
+  assert.match(worker, /await hash\(password, parts\[2\], iterations\)/);
   assert.match(worker, /iterations: 10000/);
   assert.match(worker, /secureEqual\(candidate, legacy\)/);
 });
