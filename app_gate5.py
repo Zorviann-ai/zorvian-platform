@@ -14,6 +14,7 @@ from intelligence.context import WorkspaceContext
 from intelligence.executor import execute_provider
 from intelligence.guard import guardian_check
 from intelligence.providers import ProviderProfile, ProviderRegistry
+from intelligence.resilience import status_snapshot
 
 
 _ALL_CAPABILITIES = frozenset({
@@ -26,7 +27,6 @@ _ALL_CAPABILITIES = frozenset({
 
 
 def _local_beta_enabled():
-    """Local deterministic beta is opt-in and must never silently masquerade as a connected provider."""
     return os.getenv("ALLOW_LOCAL_BETA", "0").strip() == "1"
 
 
@@ -37,7 +37,7 @@ def _configured_remote_providers():
     if os.getenv("ANTHROPIC_API_KEY"):
         configured.append("anthropic")
     if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
-        configured.append("private-adapter")
+        configured.append("zorvian-remote")
     return configured
 
 
@@ -79,6 +79,9 @@ async def gate5_beta_csp(request, call_next):
 @app.get("/intelligence/capabilities")
 def intelligence_capabilities(u=Depends(current_user)):
     configured = _configured_remote_providers()
+    states = status_snapshot(configured)
+    healthy = sum(1 for s in states.values() if s["state"] == "healthy")
+    degraded = sum(1 for s in states.values() if s["state"] in {"degraded", "cooldown"})
     if configured:
         provider_mode = "connected"
     elif _local_beta_enabled():
@@ -90,6 +93,8 @@ def intelligence_capabilities(u=Depends(current_user)):
         "guardian": "active",
         "provider_mode": provider_mode,
         "configured_provider_count": len(configured),
+        "healthy_provider_count": healthy,
+        "degraded_provider_count": degraded,
         "local_beta_enabled": _local_beta_enabled(),
         "external_actions": "approval-gated",
     }
@@ -124,11 +129,13 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
         raise HTTPException(422, str(e))
     except LookupError as e:
         audit(u, "intelligence_provider_unavailable", str(e), "warning")
-        raise HTTPException(503, "No real AI provider is configured or available")
+        raise HTTPException(503, {"error":"ai_provider_unavailable","message":"Celestial Core intelligence is temporarily unavailable. Please try again shortly."})
     except RuntimeError as e:
         audit(u, "intelligence_execution_failed", str(e), "warning")
-        raise HTTPException(502, "Intelligence provider failed safely")
+        raise HTTPException(502, {"error":"ai_provider_failed","message":"Celestial Core could not complete this intelligence request. Please try again shortly."})
 
+    if result.failover_from:
+        audit(u, "ai_provider_failover", f"{result.failover_from} -> {result.provider}")
     audit(u, "intelligence_run", f"{d.module} · {d.task} · provider={result.provider}")
     return {
         "module": result.module,
@@ -136,6 +143,7 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
         "output": result.output,
         "confidence": result.confidence,
         "provider": result.provider,
+        "failover_from": result.failover_from,
         "human_approval_required": result.human_approval_required,
         "tool_execution_allowed": result.tool_execution_allowed,
         "provenance": {
@@ -147,7 +155,5 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
     }
 
 
-# Served from the same origin as Core so beta clients can authenticate without
-# weakening CORS or exposing provider credentials in downloadable HTML files.
 if os.path.isdir("beta"):
     app.mount("/beta", StaticFiles(directory="beta", html=True), name="beta")
