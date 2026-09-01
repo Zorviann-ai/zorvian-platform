@@ -14,10 +14,11 @@ from pydantic import BaseModel, Field
 
 from app_gate11 import app
 from app import audit, current_user, db, now, rate_limit, request_fingerprint, require
-from app_gate5 import _service
+from app_gate5 import _service, _configured_remote_providers
 from intelligence.autonomy import ensure_tables as ensure_autonomy_tables, get_policy, update_policy, snapshot, create_safe_followups
 from intelligence.connected import ConnectedRequest
 from intelligence.context import WorkspaceContext
+from intelligence.resilience import status_snapshot
 from provider_mesh import PROVIDERS, approve as provider_approve, approval_ok, call_provider, ensure_tables as ensure_provider_tables, needs_approval, provider_status, request_approval
 
 
@@ -114,21 +115,23 @@ def autonomy_run(body: AutonomyRunIn, request: Request, u=Depends(current_user))
         c.execute("UPDATE autonomy_runs SET summary=?,actions_count=? WHERE id=?", (failure, len(actions), run_id))
         c.commit(); c.close()
         audit(u, "autonomy_ai_unavailable", f"run={run_id}; {exc}", "warning")
-        raise HTTPException(503, {"message": failure, "run_id": run_id, "actions": actions, "ai_complete": False})
+        raise HTTPException(503, {"error":"ai_provider_unavailable","message":"Celestial Core intelligence is temporarily unavailable. Please try again shortly.","run_id":run_id,"actions":actions,"ai_complete":False})
     except (RuntimeError, ValueError, PermissionError) as exc:
         failure = "Core AI provider failed; the run was not reported as AI-complete."
         c.execute("UPDATE autonomy_runs SET summary=?,actions_count=? WHERE id=?", (failure, len(actions), run_id))
         c.commit(); c.close()
         audit(u, "autonomy_ai_failed", f"run={run_id}; {exc}", "warning")
-        raise HTTPException(502, {"message": failure, "run_id": run_id, "actions": actions, "ai_complete": False})
+        raise HTTPException(502, {"error":"ai_provider_failed","message":"Celestial Core could not complete this intelligence request. Please try again shortly.","run_id":run_id,"actions":actions,"ai_complete":False})
 
     assessment = result.output
     provider = result.provider
     approval_required = result.human_approval_required
     c.execute("UPDATE autonomy_runs SET summary=?,actions_count=? WHERE id=?", (assessment[:12000], len(actions), run_id))
     c.commit(); c.close()
+    if result.failover_from:
+        audit(u, "ai_provider_failover", f"run={run_id}; {result.failover_from} -> {provider}")
     audit(u, "autonomy_run", f"run={run_id}; mode={policy['mode']}; actions={len(actions)}; provider={provider}")
-    return {"run_id": run_id, "mode": policy["mode"], "before": before.as_dict(), "after": after.as_dict(), "actions": actions, "assessment": assessment, "provider": provider, "human_approval_required": approval_required, "ai_complete": True}
+    return {"run_id": run_id, "mode": policy["mode"], "before": before.as_dict(), "after": after.as_dict(), "actions": actions, "assessment": assessment, "provider": provider, "failover_from": result.failover_from, "human_approval_required": approval_required, "ai_complete": True}
 
 
 @app.get("/core/autonomy/runs")
@@ -140,7 +143,13 @@ def autonomy_runs(limit: int = 25, u=Depends(current_user)):
 
 @app.get("/core/providers")
 def core_providers(u=Depends(current_user)):
-    return {"identity": "Zorvian Core", "providers_hidden_from_client_workflows": True, "services": provider_status()}
+    configured = _configured_remote_providers()
+    return {
+        "identity": "Zorvian Core",
+        "providers_hidden_from_client_workflows": True,
+        "ai_providers": status_snapshot(configured),
+        "services": provider_status(),
+    }
 
 
 @app.post("/core/providers/approvals")
