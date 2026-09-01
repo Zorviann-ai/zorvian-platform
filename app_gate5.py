@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import app, audit, current_user, rate_limit, require, request_fingerprint
+from app import app, audit, current_user, rate_limit, require, request_fingerprint, security_event
 from intelligence.connected import ConnectedIntelligenceService, ConnectedRequest, SUPPORTED_MODULES
 from intelligence.context import WorkspaceContext
 from intelligence.executor import execute_provider
@@ -17,6 +17,7 @@ from intelligence.providers import ProviderProfile, ProviderRegistry
 from intelligence.resilience import status_snapshot
 from intelligence.legal import assess, parse_ai_legal_payload
 from intelligence.financial import assess as assess_financial, parse_ai_financial_payload
+from intelligence.guardian import assess as assess_guardian, parse_ai_guardian_payload
 
 
 _ALL_CAPABILITIES = frozenset({
@@ -101,6 +102,35 @@ class FinancialAssessIn(BaseModel):
     legal_execution_allowed: bool | None = None
     promotion_approval_present: bool = False
     regulated_authorisation_system_state: str | None = None
+
+
+class GuardianAssessIn(BaseModel):
+    module: str = Field(default="security-analysis", min_length=2, max_length=50)
+    action: str = Field(min_length=2, max_length=80)
+    facts: str = Field(default="", max_length=12000)
+    resource_type: str | None = None
+    resource_id: str | None = None
+    resource_hash: str | None = None
+    consequential_action: bool = False
+    requested_outcome: str = Field(default="", max_length=500)
+    tenant_id: str | None = None
+    identity_state: str | None = None
+    session_state: str | None = None
+    mfa_verified: bool = False
+    approvals: list[dict] = Field(default_factory=list)
+    approval_present: bool = False
+    incident_state: str | None = None
+    supplier_ict_state: str | None = None
+    provider_health: str | None = None
+    provider_trust_state: str | None = None
+    retention_state: str | None = None
+    legal_hold_state: str | None = None
+    legal_execution_allowed: bool | None = None
+    legal_human_review_required: bool = False
+    financial_execution_allowed: bool | None = None
+    financial_dual_control_complete: bool | None = None
+    intent: str = "execute"
+    requested_outcome_note: str | None = None
 
 
 class IntelligenceRunIn(BaseModel):
@@ -325,6 +355,112 @@ def financial_intelligence_assess(d: FinancialAssessIn, request: Request, u=Depe
             audit(u, "financial_promotion_blocked", assessment.financial_assessment_id)
         audit(u, "financial_assessment_completed", assessment.financial_assessment_id)
     return assessment.as_public()
+
+
+@app.post("/guardian/intelligence/assess")
+def guardian_intelligence_assess(d: GuardianAssessIn, request: Request, u=Depends(current_user)):
+    require(u, "write")
+    ip, _ = request_fingerprint(request)
+    rate_limit("guardian-assess:" + u["tenant_id"] + ":" + str(ip), 60, 3600)
+    audit(u, "guardian_assessment_started", d.action)
+    security_event("guardian_assessment_started", "info", u["tenant_id"], u["id"], d.action[:200], request)
+
+    ai_payload = None
+    needs_ai = d.consequential_action and d.intent != "discuss"
+    try:
+        guardian_check(d.facts or d.action, intent=d.intent)
+    except PermissionError:
+        # Deterministic assess still records the block; do not short-circuit before the model
+        pass
+    except ValueError:
+        pass
+
+    if needs_ai:
+        try:
+            prompt = (
+                "Return JSON only with keys risk_level, security_indicators, missing_evidence, "
+                "incident_indicators, supplier_risk_indicators, review_recommendation, "
+                "reasoning_summary, assumptions. Do not grant RBAC, tenant access, clear incidents, "
+                "or override Legal/Financial/Guardian. Action: "
+                f"{d.action}. Facts: {d.facts[:4000]}"
+            )
+            ctx = WorkspaceContext(
+                tenant_id=u["tenant_id"],
+                user_id=u["id"],
+                role=u["role"],
+                module="security-analysis",
+                instructions=("Do not grant authority. Do not clear incidents or override control layers.",),
+            )
+            result = _service().run(
+                ConnectedRequest(module="security-analysis", task="guardian-control-assessment", prompt=prompt, consequential_action=d.consequential_action),
+                ctx,
+            )
+            ai_payload = parse_ai_guardian_payload(result.output)
+            if ai_payload is None:
+                audit(u, "guardian_control_blocked", "malformed AI guardian decision")
+                raise HTTPException(502, {"error": "ai_provider_failed", "message": "Guardian could not validate a structured security decision."})
+        except LookupError as exc:
+            audit(u, "guardian_control_blocked", f"provider unavailable:{exc}", "warning")
+            raise HTTPException(503, {"error": "ai_provider_unavailable", "message": "Celestial Core intelligence is temporarily unavailable. Please try again shortly."})
+        except RuntimeError as exc:
+            audit(u, "guardian_control_blocked", f"provider failed:{exc}", "warning")
+            raise HTTPException(502, {"error": "ai_provider_failed", "message": "Celestial Core could not complete this intelligence request. Please try again shortly."})
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc))
+
+    try:
+        assessment = assess_guardian(
+            tenant_id=u["tenant_id"],
+            user_id=u["id"],
+            role=u["role"],
+            module=d.module or "security-analysis",
+            action=d.action,
+            facts=d.facts,
+            resource_type=d.resource_type,
+            resource_id=d.resource_id,
+            resource_hash=d.resource_hash,
+            consequential_action=d.consequential_action,
+            requested_outcome=d.requested_outcome,
+            payload_tenant_id=d.tenant_id,
+            identity_state=d.identity_state,
+            session_state=d.session_state,
+            mfa_verified=d.mfa_verified,
+            user_status=u.get("status"),
+            approvals=d.approvals or None,
+            approval_present=d.approval_present,
+            incident_state=d.incident_state,
+            supplier_ict_state=d.supplier_ict_state,
+            provider_health=d.provider_health,
+            provider_trust_state=d.provider_trust_state,
+            retention_state=d.retention_state,
+            legal_hold_state=d.legal_hold_state,
+            legal_execution_allowed=d.legal_execution_allowed,
+            legal_human_review_required=d.legal_human_review_required,
+            financial_execution_allowed=d.financial_execution_allowed,
+            financial_dual_control_complete=d.financial_dual_control_complete,
+            intent=d.intent,
+            ai_payload=ai_payload,
+        )
+    except PermissionError as exc:
+        audit(u, "guardian_tenant_violation", str(exc), "warning")
+        audit(u, "guardian_cross_tenant_attempt", d.tenant_id or "", "warning")
+        security_event("guardian_tenant_violation", "warning", u["tenant_id"], u["id"], "payload tenant rejected", request)
+        security_event("guardian_cross_tenant_attempt", "warning", u["tenant_id"], u["id"], "payload tenant rejected", request)
+        raise HTTPException(403, str(exc))
+
+    for event_name in assessment.guardian_control.get("audit_events") or []:
+        detail = assessment.guardian_assessment_id
+        if event_name == "guardian_secret_detected":
+            detail = "secret-marker-present"
+        audit(u, event_name, detail, "warning" if "block" in event_name or "violation" in event_name else "info")
+        if event_name in {"guardian_tenant_violation", "guardian_cross_tenant_attempt", "guardian_override_attempt", "guardian_secret_detected"}:
+            security_event(event_name, "warning", u["tenant_id"], u["id"], detail, request)
+
+    public = assessment.as_public()
+    # Never echo raw secrets
+    if assessment.secret_detected and d.facts:
+        public["facts_redacted"] = True
+    return public
 
 
 @app.post("/intelligence/run")
