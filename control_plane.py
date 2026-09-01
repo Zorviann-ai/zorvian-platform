@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from intelligence.legal import assess_document_release
+from intelligence.execution import ensure_execution_schema, prepare as prepare_execution, consume_execution_ticket
 
 ALLOWED_DATA_CLASSES = {
     "public",
@@ -111,6 +112,7 @@ def init_control_schema(c: sqlite3.Connection) -> None:
     for name, decl in DOCUMENT_COLUMNS:
         if name not in existing:
             c.execute(f"ALTER TABLE documents ADD COLUMN {name} {decl}")
+    ensure_execution_schema(c)
 
 
 def ensure_tenant_profile(c: sqlite3.Connection, tenant_id: str) -> dict:
@@ -393,6 +395,49 @@ def gate_release_letter(
     }
     if not legal.execution_allowed:
         raise FailClosed("legal intelligence blocked controlled release: " + legal.reasoning_summary)
+
+    execution_ticket = None
+    if os.getenv("STAGE1_EXECUTION_GATEWAY", "0").strip() == "1":
+        ticket = prepare_execution(
+            tenant_id=tenant_id,
+            user_id=user["id"],
+            role=user.get("role") or "client",
+            module="legal-pathways",
+            action="release_letter",
+            facts=f"{doc.get('type','')} {doc.get('purpose','')} destination_present=true",
+            resource_type="document",
+            resource_id=document_id,
+            resource_hash=live_hash,
+            current_resource_hash=live_hash,
+            consequential_action=True,
+            requested_outcome="controlled_release",
+            approval_present=True,
+            approvals=[{
+                "approver_id": doc.get("approved_by"),
+                "tenant_id": tenant_id,
+                "resource_id": document_id,
+                "resource_hash": doc.get("approved_hash"),
+            }],
+            jurisdiction_raw=profile.get("home_jurisdiction") or None,
+            connection=c,
+            user_status=user.get("status"),
+        )
+        if ticket.execution_state == "PENDING":
+            raise FailClosed("execution gateway pending review")
+        if ticket.execution_state != "AUTHORISED":
+            raise FailClosed("execution gateway denied controlled release: " + ticket.reasoning_summary)
+        ticket = consume_execution_ticket(
+            connection=c,
+            ticket_id=ticket.execution_ticket_id,
+            tenant_id=tenant_id,
+            user_id=user["id"],
+            exact_action="release_letter",
+            resource_id=document_id,
+            resource_hash=live_hash,
+        )
+        if ticket.execution_state != "CONSUMED":
+            raise FailClosed("execution ticket could not be consumed")
+        execution_ticket = ticket.execution_ticket_id
     if layers["financial_intelligence"]["result"] == "review_required":
         raise FailClosed("financial intelligence review required")
     guardian_checks = [
@@ -444,7 +489,7 @@ def gate_release_letter(
             "destination_hash": destination_hash(destination),
             "result": "released",
             "created_at": now_iso,
-            "payload_json": json.dumps({"version": doc.get("version") or 1}),
+            "payload_json": json.dumps({"version": doc.get("version") or 1, "execution_ticket_id": execution_ticket, "external_execution_enabled": False}),
         },
     )
     event["layer_results"] = {
