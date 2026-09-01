@@ -11,6 +11,7 @@ if DB_PATH.exists():
 os.environ["SQLITE_PATH"] = str(DB_PATH)
 os.environ["ZORVIAN_ENV"] = "test"
 os.environ["DEV_EXPOSE_TOKENS"] = "1"
+os.environ["ALLOW_LOCAL_BETA"] = "1"
 
 from app_gate5 import app
 
