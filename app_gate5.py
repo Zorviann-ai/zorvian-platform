@@ -18,6 +18,7 @@ from intelligence.resilience import status_snapshot
 from intelligence.legal import assess, parse_ai_legal_payload
 from intelligence.financial import assess as assess_financial, parse_ai_financial_payload
 from intelligence.guardian import assess as assess_guardian, parse_ai_guardian_payload
+from intelligence.orchestrator import decide as constitutional_decide
 
 
 _ALL_CAPABILITIES = frozenset({
@@ -131,6 +132,51 @@ class GuardianAssessIn(BaseModel):
     financial_dual_control_complete: bool | None = None
     intent: str = "execute"
     requested_outcome_note: str | None = None
+
+
+class OrchestratorDecideIn(BaseModel):
+    module: str = Field(default="constitutional-core", min_length=2, max_length=50)
+    action: str = Field(min_length=2, max_length=80)
+    facts: str = Field(default="", max_length=12000)
+    jurisdiction: str | None = None
+    matter_type: str = "general"
+    financial_domain: str | None = None
+    amount: float | None = None
+    currency: str | None = None
+    customer_id: str | None = None
+    invoice_id: str | None = None
+    invoice_number: str | None = None
+    payment_reference: str | None = None
+    original_transaction_amount: float | None = None
+    beneficiary_evidence_present: bool = False
+    document_id: str | None = None
+    document_hash: str | None = None
+    resource_type: str | None = None
+    resource_id: str | None = None
+    resource_hash: str | None = None
+    consequential_action: bool = False
+    requested_outcome: str = Field(default="", max_length=500)
+    data_classes: list[str] = Field(default_factory=list)
+    tenant_id: str | None = None
+    approval_present: bool = False
+    approval_count: int = 0
+    approvals: list[dict] = Field(default_factory=list)
+    human_legal_review_present: bool = False
+    human_financial_review_present: bool = False
+    aml_kyc_system_state: str | None = None
+    sanctions_system_state: str | None = None
+    promotion_approval_present: bool = False
+    regulated_authorisation_system_state: str | None = None
+    identity_state: str | None = None
+    session_state: str | None = None
+    mfa_verified: bool = False
+    incident_state: str | None = None
+    supplier_ict_state: str | None = None
+    provider_health: str | None = None
+    provider_trust_state: str | None = None
+    retention_state: str | None = None
+    legal_hold_state: str | None = None
+    intent: str = "execute"
 
 
 class IntelligenceRunIn(BaseModel):
@@ -370,7 +416,6 @@ def guardian_intelligence_assess(d: GuardianAssessIn, request: Request, u=Depend
     try:
         guardian_check(d.facts or d.action, intent=d.intent)
     except PermissionError:
-        # Deterministic assess still records the block; do not short-circuit before the model
         pass
     except ValueError:
         pass
@@ -457,10 +502,81 @@ def guardian_intelligence_assess(d: GuardianAssessIn, request: Request, u=Depend
             security_event(event_name, "warning", u["tenant_id"], u["id"], detail, request)
 
     public = assessment.as_public()
-    # Never echo raw secrets
     if assessment.secret_detected and d.facts:
         public["facts_redacted"] = True
     return public
+
+
+@app.post("/core/intelligence/decide")
+def constitutional_orchestrator_decide(d: OrchestratorDecideIn, request: Request, u=Depends(current_user)):
+    require(u, "write")
+    ip, _ = request_fingerprint(request)
+    rate_limit("orchestrator-decide:" + u["tenant_id"] + ":" + str(ip), 60, 3600)
+    audit(u, "constitutional_decision_started", d.action)
+    try:
+        decision = constitutional_decide(
+            tenant_id=u["tenant_id"],
+            user_id=u["id"],
+            role=u["role"],
+            module=d.module or "constitutional-core",
+            action=d.action,
+            facts=d.facts,
+            jurisdiction_raw=d.jurisdiction,
+            matter_type=d.matter_type,
+            financial_domain=d.financial_domain,
+            amount=d.amount,
+            currency=d.currency,
+            customer_id=d.customer_id,
+            invoice_id=d.invoice_id,
+            invoice_number=d.invoice_number,
+            payment_reference=d.payment_reference,
+            original_transaction_amount=d.original_transaction_amount,
+            beneficiary_evidence_present=d.beneficiary_evidence_present,
+            document_id=d.document_id,
+            document_hash=d.document_hash,
+            resource_type=d.resource_type,
+            resource_id=d.resource_id,
+            resource_hash=d.resource_hash,
+            consequential_action=d.consequential_action,
+            requested_outcome=d.requested_outcome,
+            data_classes=d.data_classes,
+            payload_tenant_id=d.tenant_id,
+            approval_present=d.approval_present,
+            approval_count=d.approval_count,
+            approvals=d.approvals or None,
+            human_legal_review_present=d.human_legal_review_present,
+            human_financial_review_present=d.human_financial_review_present,
+            aml_kyc_system_state=d.aml_kyc_system_state,
+            sanctions_system_state=d.sanctions_system_state,
+            promotion_approval_present=d.promotion_approval_present,
+            regulated_authorisation_system_state=d.regulated_authorisation_system_state,
+            identity_state=d.identity_state,
+            session_state=d.session_state,
+            mfa_verified=d.mfa_verified,
+            user_status=u.get("status"),
+            incident_state=d.incident_state,
+            supplier_ict_state=d.supplier_ict_state,
+            provider_health=d.provider_health,
+            provider_trust_state=d.provider_trust_state,
+            retention_state=d.retention_state,
+            legal_hold_state=d.legal_hold_state,
+            intent=d.intent,
+        )
+    except PermissionError as exc:
+        audit(u, "constitutional_decision_blocked", "tenant-payload-rejected", "warning")
+        security_event("constitutional_tenant_violation", "warning", u["tenant_id"], u["id"], "payload tenant rejected", request)
+        raise HTTPException(403, str(exc))
+
+    event = "constitutional_control_passed" if decision.execution_allowed else "constitutional_control_blocked"
+    audit(u, event, decision.orchestrator_decision_id)
+    audit(u, "constitutional_decision_completed", f"{decision.outcome}:{decision.orchestrator_decision_id}")
+    if "legal" in decision.blocking_layers:
+        audit(u, "constitutional_legal_gate_blocked", decision.legal_assessment_id or "")
+    if "financial" in decision.blocking_layers:
+        audit(u, "constitutional_financial_gate_blocked", decision.financial_assessment_id or "")
+    if "guardian" in decision.blocking_layers:
+        audit(u, "constitutional_guardian_gate_blocked", decision.guardian_assessment_id or "")
+    return decision.as_public()
 
 
 @app.post("/intelligence/run")
