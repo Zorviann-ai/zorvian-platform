@@ -75,6 +75,8 @@ def expiry_minutes(risk_level: str, consequential: bool) -> int:
 
 
 def ensure_execution_schema(c: sqlite3.Connection) -> None:
+    from intelligence.execution_adapters import ensure_adapter_schema
+    ensure_adapter_schema(c)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS execution_tickets(
@@ -509,6 +511,7 @@ def consume_execution_ticket(
     session_state: str | None = None,
     incident_state: str | None = None,
     legal_hold_state: str | None = None,
+    commit: bool = True,
 ) -> ExecutionTicket:
     ensure_execution_schema(connection)
     ticket = load_ticket(connection, ticket_id, tenant_id)
@@ -589,8 +592,9 @@ def consume_execution_ticket(
     ticket.audit_events = events + ["execution_consumed"]
     ticket.external_execution_enabled = False
     _persist(connection, ticket)
-    try:
-        connection.commit()
-    except sqlite3.OperationalError:
-        pass
+    if commit:
+        try:
+            connection.commit()
+        except sqlite3.OperationalError:
+            pass
     return ticket
