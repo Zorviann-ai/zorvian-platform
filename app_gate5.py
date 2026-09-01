@@ -25,6 +25,22 @@ _ALL_CAPABILITIES = frozenset({
 })
 
 
+def _local_beta_enabled():
+    """Local deterministic beta is opt-in and must never silently masquerade as a connected provider."""
+    return os.getenv("ALLOW_LOCAL_BETA", "0").strip() == "1"
+
+
+def _configured_remote_providers():
+    configured = []
+    if os.getenv("OPENAI_API_KEY"):
+        configured.append("openai")
+    if os.getenv("ANTHROPIC_API_KEY"):
+        configured.append("anthropic")
+    if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
+        configured.append("private-adapter")
+    return configured
+
+
 def _registry():
     profiles = []
     if os.getenv("OPENAI_API_KEY"):
@@ -33,7 +49,7 @@ def _registry():
         profiles.append(ProviderProfile("anthropic", _ALL_CAPABILITIES, True, True, True, 12, 22, True))
     if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"):
         profiles.append(ProviderProfile("zorvian-remote", _ALL_CAPABILITIES, True, True, True, 15, 25, True))
-    if os.getenv("ALLOW_LOCAL_BETA", "1") == "1":
+    if _local_beta_enabled():
         profiles.append(ProviderProfile("zorvian-local-beta", _ALL_CAPABILITIES, True, True, True, 90, 1, True))
     return ProviderRegistry(profiles)
 
@@ -62,15 +78,19 @@ async def gate5_beta_csp(request, call_next):
 
 @app.get("/intelligence/capabilities")
 def intelligence_capabilities(u=Depends(current_user)):
-    configured = []
-    if os.getenv("OPENAI_API_KEY"): configured.append("openai")
-    if os.getenv("ANTHROPIC_API_KEY"): configured.append("anthropic")
-    if os.getenv("ZORVIAN_AI_ADAPTER_URL") and os.getenv("ZORVIAN_AI_ADAPTER_KEY"): configured.append("private-adapter")
+    configured = _configured_remote_providers()
+    if configured:
+        provider_mode = "connected"
+    elif _local_beta_enabled():
+        provider_mode = "controlled-local-beta"
+    else:
+        provider_mode = "unavailable"
     return {
         "modules": sorted(SUPPORTED_MODULES),
         "guardian": "active",
-        "provider_mode": "connected" if configured else "controlled-local-beta",
+        "provider_mode": provider_mode,
         "configured_provider_count": len(configured),
+        "local_beta_enabled": _local_beta_enabled(),
         "external_actions": "approval-gated",
     }
 
@@ -104,7 +124,7 @@ def intelligence_run(d: IntelligenceRunIn, request: Request, u=Depends(current_u
         raise HTTPException(422, str(e))
     except LookupError as e:
         audit(u, "intelligence_provider_unavailable", str(e), "warning")
-        raise HTTPException(503, str(e))
+        raise HTTPException(503, "No real AI provider is configured or available")
     except RuntimeError as e:
         audit(u, "intelligence_execution_failed", str(e), "warning")
         raise HTTPException(502, "Intelligence provider failed safely")
