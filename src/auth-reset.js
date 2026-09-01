@@ -179,14 +179,25 @@ async function resetPassword(request, env) {
     return json({ error: "invalid_or_expired_token" }, 400);
   }
 
-  const passwordHash = await hashPassword(password);
-  const usedAt = nowIso();
-  await env.DB.batch([
-    env.DB.prepare("UPDATE users SET password_hash=? WHERE id=?").bind(passwordHash, reset.user_id),
-    env.DB.prepare("UPDATE password_resets SET used_at=? WHERE id=?").bind(usedAt, reset.id),
-    env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(reset.user_id)
-  ]);
-  return json({ ok: true, message: "Password updated. You can now sign in." });
+  let stage = "password_hash";
+  try {
+    const passwordHash = await hashPassword(password);
+    const usedAt = nowIso();
+    stage = "password_commit";
+    await env.DB.batch([
+      env.DB.prepare("UPDATE users SET password_hash=? WHERE id=?").bind(passwordHash, reset.user_id),
+      env.DB.prepare("UPDATE password_resets SET used_at=? WHERE id=?").bind(usedAt, reset.id),
+      env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(reset.user_id)
+    ]);
+    return json({ ok: true, message: "Password updated. You can now sign in." });
+  } catch (error) {
+    console.error("Password reset failed", stage, error);
+    return json({
+      error: "password_reset_failed",
+      stage,
+      message: "The password could not be updated right now. Please try again."
+    }, 500);
+  }
 }
 
 async function injectForgotPassword(response) {

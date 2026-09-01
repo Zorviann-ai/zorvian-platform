@@ -23,6 +23,22 @@ test('password reset success offers a secure return to the portal login', async 
   assert.match(page, /enterCore\.hidden=false/);
 });
 
+test('password reset runtime failures are staged and returned as JSON', async () => {
+  const reset = await fs.readFile(new URL('../src/auth-reset.js', import.meta.url), 'utf8');
+  assert.match(reset, /let stage = "password_hash"/);
+  assert.match(reset, /stage = "password_commit"/);
+  assert.match(reset, /error: "password_reset_failed"/);
+  assert.match(reset, /console\.error\("Password reset failed", stage, error\)/);
+});
+
+test('password reset page can reveal and hide both password fields', async () => {
+  const page = await fs.readFile(new URL('../public/reset-password.html', import.meta.url), 'utf8');
+  assert.match(page, /id="toggleVisibility"/);
+  assert.match(page, /SHOW PASSWORD/);
+  assert.match(page, /HIDE PASSWORD/);
+  assert.match(page, /confirmPassword\.type=reveal\?'text':'password'/);
+});
+
 test('MCP bearer authentication is timing-safe and CORS is allowlisted', async () => {
   const source = await fs.readFile(new URL('../src/mcp.js', import.meta.url), 'utf8');
   assert.match(source, /async function secureEqual/);
