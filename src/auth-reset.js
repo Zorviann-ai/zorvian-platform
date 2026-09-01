@@ -218,8 +218,8 @@ async function injectForgotPassword(response) {
   );
 
   html = html.replace(
-    "renderTools();$('loginForm').addEventListener('submit',submitLogin);",
-    "renderTools();$('loginForm').addEventListener('submit',submitLogin);$('forgotPasswordButton')?.addEventListener('click',requestPasswordReset);"
+    "renderTools();prepareHubDictation();$('loginForm').addEventListener('submit',submitLogin);",
+    "renderTools();prepareHubDictation();$('loginForm').addEventListener('submit',submitLogin);$('forgotPasswordButton')?.addEventListener('click',requestPasswordReset);"
   );
 
   const headers = new Headers(response.headers);
