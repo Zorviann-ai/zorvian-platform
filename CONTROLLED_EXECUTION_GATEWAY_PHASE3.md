@@ -114,3 +114,7 @@ Operational readiness, offline drills and redacted evidence. Merge activates nob
 ## Stage 4E scope
 
 Sealed Caelomere operator ceremony runner. Preflight is read-only. Execute requires two configured platform principals and a single-use confirmation. Merge still activates nobody and sends no webhook.
+
+## Stage 4F scope
+
+Sealed one-shot production-pilot dispatch and automatic closeout. Reuses Stage 4A–4E provider, activation, claim, reconciliation and receipt machinery. No public dispatch route. Merge still activates nobody and sends no webhook.
