@@ -141,11 +141,108 @@ def authorised_plan(c, tenant=PILOT_TENANT, user="user-a", destination=DEST, bod
     return t, plan, body
 
 
-def ready(c, grant=True):
+def _install_stage4c1_activation(c, *, tenant_id, destination, hostname_suffix, signing_key_id):
+    from datetime import timedelta
+    from intelligence.execution import _iso, _now
+    from intelligence.execution_pilot_activation import (
+        OWNER_IDS_ENV,
+        SECURITY_IDS_ENV,
+        activate_pilot,
+        issue_activation_challenge,
+        load_offline_platform_principal,
+        record_platform_approval,
+    )
+    from intelligence.execution_pilot_ops import ADAPTER_ID, approve_pilot, bind_pilot_to_guardian_assessment, propose_pilot
+    from intelligence.guardian import (
+        GUARDIAN_POLICY_VERSION,
+        PILOT_PURPOSE,
+        assess as assess_guardian,
+        canonical_pilot_context,
+        guardian_policy_hash,
+        persist_guardian_assessment,
+    )
+    os.environ.setdefault(OWNER_IDS_ENV, "plat-owner")
+    os.environ.setdefault(SECURITY_IDS_ENV, "plat-sec")
+    owner = load_offline_platform_principal(actor_id="plat-owner", requested_role="platform_owner")
+    security = load_offline_platform_principal(actor_id="plat-sec", requested_role="security_operator")
+    prep = propose_pilot(
+        c,
+        tenant_id=tenant_id,
+        proposer_id="user-a",
+        role="owner",
+        destination=destination,
+        hostname_suffix=hostname_suffix,
+        signing_key_id=signing_key_id,
+        reason="isolated 4a fixture",
+        change_ref="CHG-4A",
+        max_requests=1,
+        max_exposure="none",
+    )
+    approve_pilot(c, tenant_id=tenant_id, pilot_id=prep["pilot_id"], approver_id="user-b", role="admin")
+    row = c.execute("SELECT * FROM execution_pilot_preparations WHERE pilot_id=?", (prep["pilot_id"],)).fetchone()
+    expiry = _iso(_now() + timedelta(hours=1))
+    context = canonical_pilot_context(
+        {
+            "purpose": PILOT_PURPOSE,
+            "pilot_id": row["pilot_id"],
+            "tenant_id": tenant_id,
+            "requesting_user_id": "user-a",
+            "adapter_id": ADAPTER_ID,
+            "action": "post_webhook",
+            "destination_hash": row["destination_hash"],
+            "manifest_hash": row["manifest_hash"],
+            "policy_version": GUARDIAN_POLICY_VERSION,
+            "policy_hash": guardian_policy_hash(),
+            "consequential_action": True,
+            "expiry": expiry,
+        }
+    )
+    assessment = assess_guardian(
+        tenant_id=tenant_id,
+        user_id="user-a",
+        role="owner",
+        module="execution-gateway",
+        action="post_webhook",
+        facts="production_webhook_pilot exact context",
+        consequential_action=True,
+        identity_state="authenticated",
+        session_state="normal",
+        user_status="active",
+        connection=c,
+        pilot_context=context,
+    )
+    persist_guardian_assessment(c, assessment)
+    bind_pilot_to_guardian_assessment(
+        c,
+        guardian_assessment_id=assessment.guardian_assessment_id,
+        pilot_id=row["pilot_id"],
+        tenant_id=tenant_id,
+        actor_id="user-a",
+    )
+    if c.in_transaction:
+        c.commit()
+    record_platform_approval(c, pilot_id=row["pilot_id"], principal=owner)
+    record_platform_approval(c, pilot_id=row["pilot_id"], principal=security)
+    issued = issue_activation_challenge(c, pilot_id=row["pilot_id"], owner=owner, security=security)
+    activate_pilot(c, pilot_id=row["pilot_id"], principal=owner, challenge_nonce=issued["nonce"])
+    if c.in_transaction:
+        c.commit()
+    return row["pilot_id"]
+
+
+def ready(c, grant=True, activate=True):
     arm_process()
     t, plan, body = authorised_plan(c)
     if grant:
         grant_live(c, tenant_id=PILOT_TENANT, adapter_id="webhook.post", action="post_webhook", env="prod", actor_id="ops", enabled=True)
+    if activate and grant:
+        _install_stage4c1_activation(
+            c,
+            tenant_id=PILOT_TENANT,
+            destination=DEST,
+            hostname_suffix="pilot.example",
+            signing_key_id="key-test-1",
+        )
     shadow_execution_plan(c, tenant_id=PILOT_TENANT, user_id="user-a", plan_id=plan["execution_plan_id"], role="owner")
     token = issue_confirmation_token(
         c,
@@ -204,11 +301,20 @@ def test_wrong_tenant_and_adapter_denied():
 
 def test_missing_grant_and_empty_allowlist_and_secret():
     c = conn()
-    t, plan, token, transport, resolver = ready(c, grant=False)
+    t, plan, token, transport, resolver = ready(c, grant=False, activate=False)
     with pytest.raises(ProductionPilotDenied, match="grant"):
         submit_production_pilot(c, tenant_id=PILOT_TENANT, user_id="user-a", plan_id=plan["execution_plan_id"], confirmation_token=token, role="owner", transport=transport, resolver=resolver)
     grant_live(c, tenant_id=PILOT_TENANT, adapter_id="webhook.post", action="post_webhook", env="prod", actor_id="ops", enabled=True)
+    _install_stage4c1_activation(
+        c,
+        tenant_id=PILOT_TENANT,
+        destination=DEST,
+        hostname_suffix="pilot.example",
+        signing_key_id="key-test-1",
+    )
     c.execute("DELETE FROM execution_destination_allowlist")
+    if c.in_transaction:
+        c.commit()
     with pytest.raises(ProductionPilotDenied, match="allowlist"):
         submit_production_pilot(c, tenant_id=PILOT_TENANT, user_id="user-a", plan_id=plan["execution_plan_id"], confirmation_token=token, role="owner", transport=transport, resolver=resolver)
     os.environ.pop("ZORVIAN_WEBHOOK_PILOT_SIGNING_SECRET")

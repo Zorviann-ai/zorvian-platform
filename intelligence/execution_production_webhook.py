@@ -284,6 +284,11 @@ def evaluate_pilot_runtime_gates(
     tenant_id: str,
     adapter_id: str,
     action: str,
+    pilot_id: str | None = None,
+    destination_hash: str | None = None,
+    manifest_hash: str | None = None,
+    signing_key_id: str | None = None,
+    exact: bool = False,
 ) -> None:
     evaluate_pilot_process_gates()
     if tenant_id != configured_pilot_tenant():
@@ -298,6 +303,21 @@ def evaluate_pilot_runtime_gates(
         raise ProductionPilotDenied("tenant live grant is missing or disabled")
     if circuit_open(c, tenant_id, adapter_id):
         raise ProductionPilotDenied("circuit breaker is open")
+    from intelligence.execution_pilot_activation import ActivationDenied, enforce_activation_for_runtime
+    try:
+        enforce_activation_for_runtime(
+            c,
+            tenant_id=tenant_id,
+            adapter_id=adapter_id,
+            action=action,
+            pilot_id=pilot_id,
+            destination_hash=destination_hash,
+            manifest_hash=manifest_hash,
+            signing_key_id=signing_key_id,
+            exact=exact,
+        )
+    except ActivationDenied as exc:
+        raise ProductionPilotDenied(str(exc)) from exc
 
 
 def select_production_provider(adapter, *, connection: sqlite3.Connection | None = None, tenant_id: str | None = None):
@@ -659,7 +679,29 @@ def submit_production_pilot(
         raise ProductionPilotDenied("execution plan not found")
     if plan["requesting_user_id"] != user_id:
         raise ProductionPilotDenied("execution plan does not belong to this user")
-    evaluate_pilot_runtime_gates(c, tenant_id=tenant_id, adapter_id=plan["adapter_id"], action=plan["action"])
+    idem = plan.get("idempotency_key") or f"{plan_id}:{plan['payload_hash']}"
+    def _idempotent_replay():
+        row = c.execute("SELECT * FROM execution_attempts WHERE tenant_id=? AND idempotency_key=?", (tenant_id, idem)).fetchone()
+        if row is None:
+            return None
+        return {
+            "attempt_id": row["id"],
+            "state": row["state"],
+            "idempotent_replay": True,
+            "external_execution_enabled": False,
+            "provider_submitted": True,
+        }
+
+    existing = _idempotent_replay()
+    if existing is not None:
+        return existing
+    try:
+        evaluate_pilot_runtime_gates(c, tenant_id=tenant_id, adapter_id=plan["adapter_id"], action=plan["action"])
+    except ProductionPilotDenied:
+        replay = _idempotent_replay()
+        if replay is not None:
+            return replay
+        raise
     ticket = load_ticket(c, plan["execution_ticket_id"], tenant_id)
     if ticket is None:
         raise ProductionPilotDenied("execution ticket not found")
@@ -676,7 +718,13 @@ def submit_production_pilot(
     if len(body.encode("utf-8")) > HARD_MAX_PAYLOAD:
         raise ProductionPilotDenied("payload exceeds 32KB")
     resolver = resolver or SystemResolver()
-    dest, resolution = validate_pilot_destination(dest_value, allowed_hashes=_allowlisted(c, tenant_id, plan["adapter_id"]), resolver=resolver, plan_id=plan_id)
+    try:
+        dest, resolution = validate_pilot_destination(dest_value, allowed_hashes=_allowlisted(c, tenant_id, plan["adapter_id"]), resolver=resolver, plan_id=plan_id)
+    except (DestinationDenied, ProductionPilotDenied):
+        replay = _idempotent_replay()
+        if replay is not None:
+            return replay
+        raise
     caller_tx = _in_transaction(c)
     persist_resolution(c, tenant_id=tenant_id, record=resolution)
     if not caller_tx and _in_transaction(c):
@@ -685,7 +733,13 @@ def submit_production_pilot(
         except sqlite3.Error as exc:
             _rollback_quietly(c)
             raise ProductionPilotDenied(f"resolution persist commit failed: {exc}") from exc
-    dest2, resolution2 = validate_pilot_destination(dest_value, allowed_hashes=_allowlisted(c, tenant_id, plan["adapter_id"]), resolver=resolver, plan_id=plan_id)
+    try:
+        dest2, resolution2 = validate_pilot_destination(dest_value, allowed_hashes=_allowlisted(c, tenant_id, plan["adapter_id"]), resolver=resolver, plan_id=plan_id)
+    except (DestinationDenied, ProductionPilotDenied):
+        replay = _idempotent_replay()
+        if replay is not None:
+            return replay
+        raise
     if set(resolution.addresses) != set(resolution2.addresses):
         raise DestinationDenied("DNS_REBINDING_DENIED")
     if not resolution2.addresses:
@@ -707,7 +761,48 @@ def submit_production_pilot(
     attempt_id = str(uuid.uuid4())
     try:
         begin_immediate_or_deny(c)
-        evaluate_pilot_runtime_gates(c, tenant_id=tenant_id, adapter_id=plan["adapter_id"], action=plan["action"])
+        evaluate_pilot_runtime_gates(
+            c,
+            tenant_id=tenant_id,
+            adapter_id=plan["adapter_id"],
+            action=plan["action"],
+            destination_hash=plan.get("destination_hash"),
+            signing_key_id=(os.getenv(PILOT_KEY_ID_ENV) or "").strip() or None,
+            exact=True,
+        )
+        from intelligence.execution_pilot_activation import ActivationDenied, claim_activation_success, enforce_activation_for_runtime
+        try:
+            bound = enforce_activation_for_runtime(
+                c,
+                tenant_id=tenant_id,
+                adapter_id=plan["adapter_id"],
+                action=plan["action"],
+                destination_hash=plan.get("destination_hash"),
+                signing_key_id=(os.getenv(PILOT_KEY_ID_ENV) or "").strip() or None,
+                exact=True,
+            )
+            claim_activation_success(
+                c,
+                tenant_id=tenant_id,
+                adapter_id=plan["adapter_id"],
+                action=plan["action"],
+                pilot_id=bound["pilot_id"],
+                destination_hash=bound["destination_hash"],
+                manifest_hash=bound["manifest_hash"],
+                signing_key_id=bound["signing_key_id"],
+                exact=True,
+            )
+        except ActivationDenied as exc:
+            row = c.execute("SELECT * FROM execution_attempts WHERE tenant_id=? AND idempotency_key=?", (tenant_id, idem)).fetchone()
+            if row is not None:
+                return {
+                    "attempt_id": row["id"],
+                    "state": row["state"],
+                    "idempotent_replay": True,
+                    "external_execution_enabled": False,
+                    "provider_submitted": True,
+                }
+            raise ProductionPilotDenied(str(exc)) from exc
         _claim_limits(c, tenant_id, user_id)
         try:
             consume_confirmation_token(
@@ -808,9 +903,15 @@ def submit_production_pilot(
             commit_claim_or_deny(c)
     except ProductionPilotDenied:
         _rollback_quietly(c)
+        replay = _idempotent_replay()
+        if replay is not None:
+            return replay
         raise
     except (LiveDenied, DestinationDenied, AdapterDenied) as exc:
         _rollback_quietly(c)
+        replay = _idempotent_replay()
+        if replay is not None:
+            return replay
         raise ProductionPilotDenied(str(exc)) from exc
     except sqlite3.Error as exc:
         _rollback_quietly(c)
