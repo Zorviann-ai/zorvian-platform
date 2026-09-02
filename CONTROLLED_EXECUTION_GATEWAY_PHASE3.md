@@ -101,6 +101,8 @@ Operator-controlled readiness, two-person preparation, precheck, shutdown and ob
 
 ## Stage 4C1 scope
 
-Activation control plane only. No tenant is activated by merge. No HTTP activation route. ClosedProvider remains the default. Stage 4C2 is not started.
+Activation control plane only. No tenant is activated by merge. No HTTP activation route. ClosedProvider remains the default.
 
-First live candidate remains `webhook.post` to a platform-owned HTTPS sink after a later Stage 4C2 ceremony.
+## Stage 4C2 scope
+
+Fail-closed one-shot runtime, reconciliation and observability around the Stage 4C1 ceremony. No public activation or reconcile route. No scheduler. Production remains ClosedProvider. Stage 4D is not started.

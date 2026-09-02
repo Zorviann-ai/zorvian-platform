@@ -566,8 +566,23 @@ def classify_outcome(status: int) -> str:
     return "UNCERTAIN"
 
 
-def recover_stale_production(c: sqlite3.Connection, *, tenant_id: str | None = None, older_than_seconds: int = 30) -> list[str]:
-    ensure_stage4a_schema(c)
+def recover_stale_production(
+    c: sqlite3.Connection,
+    *,
+    tenant_id: str | None = None,
+    older_than_seconds: int = 30,
+    commit: bool = True,
+    install_schema: bool = True,
+) -> list[str]:
+    """Mark stale SUBMITTING attempts UNCERTAIN. Never contacts a provider.
+
+    When called from an existing writer transaction, pass commit=False and
+    install_schema=False so DDL cannot implicitly commit the caller.
+    """
+    if install_schema:
+        if c.in_transaction and not commit:
+            raise ProductionPilotDenied("schema install would commit the caller transaction")
+        ensure_stage4a_schema(c)
     cutoff = _iso(_now() - timedelta(seconds=older_than_seconds))
     sql = "SELECT * FROM execution_attempts WHERE state='SUBMITTING' AND updated_at<=?"
     params: list[Any] = [cutoff]
@@ -771,6 +786,7 @@ def submit_production_pilot(
             exact=True,
         )
         from intelligence.execution_pilot_activation import ActivationDenied, claim_activation_success, enforce_activation_for_runtime
+        from intelligence.execution_pilot_reconciliation import require_exact_activation_binding
         try:
             bound = enforce_activation_for_runtime(
                 c,
@@ -780,6 +796,20 @@ def submit_production_pilot(
                 destination_hash=plan.get("destination_hash"),
                 signing_key_id=(os.getenv(PILOT_KEY_ID_ENV) or "").strip() or None,
                 exact=True,
+            )
+            require_exact_activation_binding(
+                c,
+                tenant_id=tenant_id,
+                adapter_id=plan["adapter_id"],
+                action=plan["action"],
+                pilot_id=bound["pilot_id"],
+                destination_hash=bound["destination_hash"],
+                manifest_hash=bound["manifest_hash"],
+                signing_key_id=bound["signing_key_id"],
+                guardian_assessment_id=bound.get("guardian_assessment_id"),
+                guardian_context_hash=bound.get("guardian_context_hash"),
+                policy_version=bound.get("policy_version"),
+                policy_hash=bound.get("policy_hash"),
             )
             claim_activation_success(
                 c,
@@ -870,14 +900,14 @@ def submit_production_pilot(
         now = _iso()
         try:
             c.execute(
-                """INSERT INTO execution_attempts(id,tenant_id,plan_id,ticket_id,adapter_id,idempotency_key,state,provider_ref,created_at,updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (attempt_id, tenant_id, plan_id, plan["execution_ticket_id"], plan["adapter_id"], idem, "SUBMITTING", None, now, now),
+                """INSERT INTO execution_attempts(id,tenant_id,plan_id,ticket_id,adapter_id,idempotency_key,state,provider_ref,created_at,updated_at,activation_id,pilot_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (attempt_id, tenant_id, plan_id, plan["execution_ticket_id"], plan["adapter_id"], idem, "SUBMITTING", None, now, now, bound.get("activation_id"), bound.get("pilot_id")),
             )
             c.execute(
-                """INSERT INTO execution_pilot_attempts(attempt_id,tenant_id,plan_id,user_id,idempotency_key,provider_submitted,submit_count,cancel_requested,resolution_hash,created_at,updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                (attempt_id, tenant_id, plan_id, user_id, idem, 1, 1, 0, resolution2.record_hash, now, now),
+                """INSERT INTO execution_pilot_attempts(attempt_id,tenant_id,plan_id,user_id,idempotency_key,provider_submitted,submit_count,cancel_requested,resolution_hash,created_at,updated_at,activation_id,pilot_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (attempt_id, tenant_id, plan_id, user_id, idem, 1, 1, 0, resolution2.record_hash, now, now, bound.get("activation_id"), bound.get("pilot_id")),
             )
         except sqlite3.IntegrityError:
             _rollback_quietly(c)
