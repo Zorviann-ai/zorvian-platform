@@ -105,4 +105,8 @@ Activation control plane only. No tenant is activated by merge. No HTTP activati
 
 ## Stage 4C2 scope
 
-Fail-closed one-shot runtime, reconciliation and observability around the Stage 4C1 ceremony. No public activation or reconcile route. No scheduler. Production remains ClosedProvider. Stage 4D is not started.
+Fail-closed one-shot runtime, reconciliation and observability around the Stage 4C1 ceremony. No public activation or reconcile route. No scheduler. Production remains ClosedProvider.
+
+## Stage 4D scope
+
+Operational readiness, offline drills and redacted evidence. Merge activates nobody and sends no webhook. The real production pilot is not started.
