@@ -91,4 +91,8 @@ Stage 3 isolated submit may move `SHADOW_COMPLETE → SUBMITTING` and then to `E
 
 ## Recommendation for later stages
 
-First live candidate remains `webhook.post` to a platform-owned HTTPS sink, after Stage 4+ and a separate pilot approval. Stage 4 has not started.
+## Stage 4A scope
+
+Production-grade webhook pilot capability, switched off. Provider selection defaults to ClosedProvider. No pilot tenant, grant, destination or signing secret is created by merge or migration. Stage 4B activation has not started.
+
+First live candidate remains `webhook.post` to a platform-owned HTTPS sink after Stage 4B approval.
