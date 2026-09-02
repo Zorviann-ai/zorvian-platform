@@ -28,6 +28,17 @@ from intelligence.execution_production_webhook import (
     submit_production_pilot,
 )
 from intelligence.execution_receipts import list_receipts_for_attempt as _list_receipts, public_receipt
+from intelligence.execution_pilot_ops import (
+    PilotOpsDenied,
+    activation_precheck,
+    approve_pilot,
+    assess_pilot_readiness,
+    emergency_shutdown,
+    observability,
+    propose_pilot,
+    public_manifest,
+    shutdown_status,
+)
 from app import db as core_db
 
 
@@ -499,7 +510,9 @@ def guardian_intelligence_assess(d: GuardianAssessIn, request: Request, u=Depend
             raise HTTPException(403, str(exc))
 
     try:
-        assessment = assess_guardian(
+        _gconn = core_db()
+        try:
+            assessment = assess_guardian(
             tenant_id=u["tenant_id"],
             user_id=u["id"],
             role=u["role"],
@@ -530,7 +543,11 @@ def guardian_intelligence_assess(d: GuardianAssessIn, request: Request, u=Depend
             financial_dual_control_complete=d.financial_dual_control_complete,
             intent=d.intent,
             ai_payload=ai_payload,
+            connection=_gconn,
         )
+            _gconn.commit()
+        finally:
+            _gconn.close()
     except PermissionError as exc:
         audit(u, "guardian_tenant_violation", str(exc), "warning")
         audit(u, "guardian_cross_tenant_attempt", d.tenant_id or "", "warning")
@@ -719,6 +736,28 @@ class ExecutionPlanFollowIn(BaseModel):
     tenant_id: str | None = None
 
 
+class PilotPrepareIn(BaseModel):
+    destination: str
+    hostname_suffix: str
+    signing_key_id: str
+    reason: str
+    change_ref: str
+    max_requests: int = 1
+    max_exposure: str = "internal-only"
+    tenant_id: str | None = None
+
+
+class PilotApproveIn(BaseModel):
+    note: str | None = None
+    tenant_id: str | None = None
+
+
+class PilotShutdownIn(BaseModel):
+    reason: str
+    pilot_id: str | None = None
+    tenant_id: str | None = None
+
+
 @app.post("/api/execution/plans")
 def execution_plan_create(d: ExecutionPlanIn, request: Request, u=Depends(current_user)):
     require(u, "write")
@@ -841,6 +880,144 @@ def execution_attempt_receipts(attempt_id: str, u=Depends(current_user)):
     rows = _list_receipts(c, attempt_id, u["tenant_id"])
     c.close()
     return {"receipts": [public_receipt(r) for r in rows], "external_execution_enabled": False}
+
+
+def _pilot_ops_user(u):
+    if u.get("role") not in {"owner", "admin"}:
+        raise HTTPException(403, "owner or admin role is required")
+
+
+def _reject_client_tenant(d, u):
+    if d and getattr(d, "tenant_id", None) and d.tenant_id != u["tenant_id"]:
+        raise HTTPException(403, "Tenant identity cannot be supplied by the client payload")
+
+
+@app.get("/api/execution/pilot/readiness")
+def execution_pilot_readiness(destination_hash: str | None = None, u=Depends(current_user)):
+    _pilot_ops_user(u)
+    c = core_db()
+    try:
+        return assess_pilot_readiness(c, tenant_id=u["tenant_id"], destination_hash_value=destination_hash)
+    finally:
+        c.close()
+
+
+@app.get("/api/execution/pilot/shutdown-status")
+def execution_pilot_shutdown_status(u=Depends(current_user)):
+    _pilot_ops_user(u)
+    c = core_db()
+    try:
+        return shutdown_status(c, tenant_id=u["tenant_id"])
+    finally:
+        c.close()
+
+
+@app.get("/api/execution/pilot/observability")
+def execution_pilot_observability(pilot_id: str | None = None, u=Depends(current_user)):
+    _pilot_ops_user(u)
+    c = core_db()
+    try:
+        return observability(c, tenant_id=u["tenant_id"], pilot_id=pilot_id)
+    finally:
+        c.close()
+
+
+@app.post("/api/execution/pilot/prepare")
+def execution_pilot_prepare(d: PilotPrepareIn, u=Depends(current_user)):
+    _pilot_ops_user(u)
+    _reject_client_tenant(d, u)
+    c = core_db()
+    try:
+        out = propose_pilot(
+            c,
+            tenant_id=u["tenant_id"],
+            proposer_id=u["id"],
+            role=u.get("role") or "owner",
+            destination=d.destination,
+            hostname_suffix=d.hostname_suffix,
+            signing_key_id=d.signing_key_id,
+            reason=d.reason,
+            change_ref=d.change_ref,
+            max_requests=d.max_requests,
+            max_exposure=d.max_exposure,
+        )
+        c.commit()
+    except PilotOpsDenied as exc:
+        raise HTTPException(403, str(exc))
+    finally:
+        c.close()
+    audit(u, "execution_pilot_prepared", out["pilot_id"])
+    return out
+
+
+@app.post("/api/execution/pilot/{pilot_id}/approve")
+def execution_pilot_approve(pilot_id: str, d: PilotApproveIn | None = None, u=Depends(current_user)):
+    _pilot_ops_user(u)
+    _reject_client_tenant(d, u)
+    c = core_db()
+    try:
+        out = approve_pilot(
+            c,
+            tenant_id=u["tenant_id"],
+            pilot_id=pilot_id,
+            approver_id=u["id"],
+            role=u.get("role") or "owner",
+            note="" if d is None else (d.note or ""),
+        )
+        c.commit()
+    except PilotOpsDenied as exc:
+        raise HTTPException(403, str(exc))
+    finally:
+        c.close()
+    audit(u, "execution_pilot_approved", pilot_id)
+    return out
+
+
+@app.get("/api/execution/pilot/manifests/{pilot_id}")
+def execution_pilot_get(pilot_id: str, u=Depends(current_user)):
+    _pilot_ops_user(u)
+    c = core_db()
+    try:
+        return public_manifest(c, tenant_id=u["tenant_id"], pilot_id=pilot_id)
+    except PilotOpsDenied as exc:
+        raise HTTPException(403, str(exc))
+    finally:
+        c.close()
+
+
+@app.post("/api/execution/pilot/{pilot_id}/precheck")
+def execution_pilot_precheck(pilot_id: str, u=Depends(current_user)):
+    _pilot_ops_user(u)
+    c = core_db()
+    try:
+        return activation_precheck(c, tenant_id=u["tenant_id"], pilot_id=pilot_id)
+    except PilotOpsDenied as exc:
+        raise HTTPException(403, str(exc))
+    finally:
+        c.close()
+
+
+@app.post("/api/execution/pilot/shutdown")
+def execution_pilot_shutdown(d: PilotShutdownIn, u=Depends(current_user)):
+    _pilot_ops_user(u)
+    _reject_client_tenant(d, u)
+    c = core_db()
+    try:
+        out = emergency_shutdown(
+            c,
+            tenant_id=u["tenant_id"],
+            actor_id=u["id"],
+            role=u.get("role") or "owner",
+            reason=d.reason,
+            pilot_id=d.pilot_id,
+        )
+        c.commit()
+    except PilotOpsDenied as exc:
+        raise HTTPException(403, str(exc))
+    finally:
+        c.close()
+    audit(u, "execution_pilot_shutdown", d.reason, "warning")
+    return out
 
 
 @app.post("/api/execution/plans/{plan_id}/execute")
