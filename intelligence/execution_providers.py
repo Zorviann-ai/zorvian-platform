@@ -131,9 +131,13 @@ PROVIDERS: dict[str, type[ClosedProvider]] = {
 }
 
 
-def get_provider(adapter: ExecutionAdapter, *, mode: str = "production") -> ClosedProvider:
-    """Production always receives ClosedProvider. Sandbox is never selected here."""
-    if mode == "production" or mode is None:
+def get_provider(adapter: ExecutionAdapter, *, mode: str = "production", connection=None, tenant_id: str | None = None) -> ClosedProvider:
+    """Production defaults to ClosedProvider. Pilot provider only when every Stage 4A gate passes."""
+    if mode in {"production", "pilot", None}:
+        if mode == "pilot" or connection is not None:
+            from intelligence.execution_production_webhook import select_production_provider
+
+            return select_production_provider(adapter, connection=connection, tenant_id=tenant_id)
         return ClosedProvider(adapter)
     cls = PROVIDERS.get(adapter.adapter_id, ClosedProvider)
     return cls(adapter)
