@@ -31,6 +31,16 @@ from intelligence.execution_adapters import (
     _update_plan_status,
 )
 from intelligence.execution_providers import ClosedProvider, ProviderDenied, get_provider
+from intelligence.execution_providers_webhook import (
+    InProcessWebhookSink,
+    NullResolver,
+    ResolverPort,
+    SandboxRequest,
+    StaticResolver,
+    WebhookSandboxProvider,
+    DestinationDenied,
+    validate_hardened_webhook_destination,
+)
 from intelligence.execution_receipts import record_receipt
 
 LIVE_ENV_SWITCH = "ZORVIAN_EXTERNAL_EXECUTION"
@@ -189,6 +199,20 @@ def ensure_phase3_schema(c: sqlite3.Connection) -> None:
             expires_at TEXT NOT NULL,
             consumed_at TEXT,
             revoked_at TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS execution_resolution_records(
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            plan_id TEXT NOT NULL,
+            destination_hash TEXT NOT NULL,
+            hostname TEXT NOT NULL,
+            addresses TEXT NOT NULL DEFAULT '[]',
+            record_hash TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
         """
@@ -562,7 +586,20 @@ def shadow_execution_plan(
     if adapter.requires_destination:
         dest_value = destination or plan.get("destination")
         if adapter.adapter_type == "webhook":
-            validate_webhook_destination_stage1(dest_value, allowed)
+            host_allow = []
+            if dest_value:
+                from urllib.parse import urlsplit
+                host = urlsplit(dest_value).hostname
+                if host:
+                    host_allow = [host]
+            validate_hardened_webhook_destination(
+                dest_value,
+                allowed_hosts=host_allow,
+                resolver=NullResolver(),
+                plan_id=plan_id,
+            )
+            if not allowed or destination_hash(dest_value or "") not in allowed:
+                raise LiveDenied("destination is not allowlisted for this tenant adapter")
         else:
             if not allowed or destination_hash(dest_value or "") not in allowed:
                 raise LiveDenied("destination is not allowlisted for this tenant adapter")
@@ -647,3 +684,106 @@ def operator_status(c: sqlite3.Connection, *, tenant_id: str | None = None) -> d
 
 def record_denied(c: sqlite3.Connection, *, tenant_id: str, actor_id: str, reason: str, plan_id: str | None = None) -> None:
     _audit(c, tenant_id=tenant_id, actor_id=actor_id, event="execution_live_denied", subject_id=plan_id, detail={"reason": reason})
+
+
+def persist_resolution(c: sqlite3.Connection, *, tenant_id: str, record) -> None:
+    ensure_phase3_schema(c)
+    c.execute(
+        """INSERT INTO execution_resolution_records(
+            id,tenant_id,plan_id,destination_hash,hostname,addresses,record_hash,created_at
+        ) VALUES (?,?,?,?,?,?,?,?)""",
+        (
+            record.record_id,
+            tenant_id,
+            record.plan_id,
+            record.destination_hash,
+            record.hostname,
+            json.dumps(list(record.addresses)),
+            record.record_hash,
+            record.created_at,
+        ),
+    )
+
+
+def shadow_webhook_sandbox(
+    c: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    user_id: str,
+    plan_id: str,
+    role: str = "write",
+    payload: dict | None = None,
+    destination: str | None = None,
+    allowed_hosts: list[str] | None = None,
+    resolver: ResolverPort | None = None,
+    sink: InProcessWebhookSink | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict:
+    """Stage 2 shadow + in-process sandbox construction. Never submits live."""
+    base = shadow_execution_plan(
+        c,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        plan_id=plan_id,
+        role=role,
+        payload=payload,
+        destination=destination,
+    )
+    plan = load_plan(c, plan_id, tenant_id)
+    if plan is None:
+        raise LiveDenied("execution plan not found")
+    adapter = get_adapter(plan["adapter_id"])
+    if adapter.adapter_id != "webhook.post":
+        raise LiveDenied("webhook sandbox requires webhook.post")
+    dest_value = destination or plan.get("destination")
+    if payload is not None:
+        body = payload
+    else:
+        raw = plan.get("payload_canonical") or "{}"
+        body = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    provider = WebhookSandboxProvider(adapter, transport=sink, resolver=resolver or NullResolver(), production_mode=False)
+    plan_view = dict(plan)
+    plan_view["id"] = plan.get("execution_plan_id") or plan.get("id")
+    request = provider.build_sandbox_request(
+        plan=plan_view,
+        payload=body,
+        destination=dest_value,
+        allowed_hosts=allowed_hosts or [],
+        headers=headers,
+    )
+    _, resolution = validate_hardened_webhook_destination(
+        dest_value,
+        allowed_hosts=allowed_hosts or [],
+        resolver=resolver or NullResolver(),
+        plan_id=plan_id,
+    )
+    persist_resolution(c, tenant_id=tenant_id, record=resolution)
+    recorded = provider.record_sandbox(request) if sink is not None else None
+    ticket_after = load_ticket(c, plan["execution_ticket_id"], tenant_id)
+    public = {
+        "plan_id": request.plan_id,
+        "tenant_id": request.tenant_id,
+        "adapter_id": request.adapter_id,
+        "action": request.action,
+        "destination_hash": request.destination_hash,
+        "payload_hash": request.payload_hash,
+        "resource_hash": request.resource_hash,
+        "approval_hash": request.approval_hash,
+        "idempotency_key": request.idempotency_key,
+        "masked_destination": request.masked_destination,
+        "redacted_headers": request.redacted_headers,
+        "resolution_record_hash": request.resolution_record_hash,
+        "created_at": request.created_at,
+        "expires_at": request.expires_at,
+    }
+    banned = ("secret", "authorization", "token", "password")
+    blob = json.dumps(public)
+    if any(word in blob.lower() and "idempotency" not in blob.lower() for word in ("bearer ", "basic ")):
+        raise LiveDenied("sandbox output leaked credentials")
+    return {
+        **base,
+        "sandbox_request": public,
+        "sandbox_receipt": recorded,
+        "ticket_state": None if ticket_after is None else ticket_after.execution_state,
+        "external_execution_enabled": False,
+    }

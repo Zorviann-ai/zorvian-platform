@@ -55,3 +55,6 @@ Allowed transitions only. Stage 1 public helpers may move `PREPARED → SHADOW_C
 ## Recommendation for later stages
 
 First live candidate remains `webhook.post` to a platform-owned HTTPS sink, after Stage 2+ and a separate pilot approval.
+
+
+Stage 2 sandbox, hardened destinations and ResolverPort added. Live submit remains disabled.
