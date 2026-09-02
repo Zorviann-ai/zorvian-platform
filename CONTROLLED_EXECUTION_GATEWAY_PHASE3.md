@@ -110,3 +110,7 @@ Fail-closed one-shot runtime, reconciliation and observability around the Stage 
 ## Stage 4D scope
 
 Operational readiness, offline drills and redacted evidence. Merge activates nobody and sends no webhook. The real production pilot is not started.
+
+## Stage 4E scope
+
+Sealed Caelomere operator ceremony runner. Preflight is read-only. Execute requires two configured platform principals and a single-use confirmation. Merge still activates nobody and sends no webhook.
