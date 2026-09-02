@@ -496,3 +496,28 @@ class WebhookSandboxProvider(ClosedProvider):
             destination_hash=plan.get("destination_hash"),
             payload_hash=plan.get("payload_hash"),
         )
+
+
+class IsolatedWebhookProvider(WebhookSandboxProvider):
+    """Stage 3 isolated-CI provider. Never selected by production get_provider."""
+
+    def __init__(self, adapter: ExecutionAdapter, *, production_mode: bool = False, transport=None, resolver=None):
+        super().__init__(adapter, transport=transport, resolver=resolver, production_mode=production_mode)
+
+    def submit(self, plan: dict[str, Any], idempotency_key: str, timeout: float) -> Attempt:
+        raise ProviderDenied(
+            "IsolatedWebhookProvider.submit is not a production path; use submit_isolated_live"
+        )
+
+    def cancel(self, provider_ref: str) -> CancelResult:
+        raise ProviderDenied("Isolated cancel is mediated by request_isolated_cancel")
+
+    def preview(self, plan: dict[str, Any]) -> DryRunPreview:
+        return DryRunPreview(
+            mode="isolated_ci",
+            adapter_id=self.adapter_id,
+            execution_allowed=False,
+            reason="Stage 3 isolated CI only; production live remains disabled",
+            destination_hash=plan.get("destination_hash"),
+            payload_hash=plan.get("payload_hash"),
+        )

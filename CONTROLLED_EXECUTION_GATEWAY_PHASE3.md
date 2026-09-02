@@ -3,7 +3,14 @@
 **Stage 1 implemented on branch `core/controlled-execution-gateway-phase3-stage1`.**  
 Base: `main` @ `d0e1112d3c41eb913b08b08ba27abecb83b49e54`.
 
-External execution remains **disabled**. No provider request leaves the process. Stage 2 has not started.
+**Stage 2 implemented on branch `core/controlled-execution-gateway-phase3-stage2`.**  
+Base: `main` @ `a340878` / merge `ab245a0`.
+
+**Stage 3 implemented on branch `core/controlled-execution-gateway-phase3-stage3-rebuild`.**  
+Base: `main` @ `ab245a0538afd5703a6087a240575134bfb30cb1`.
+
+External execution remains **disabled**. Production `get_provider` remains `ClosedProvider`.
+There is no production grant, no public live endpoint, and no Stage 4 work.
 
 ## Database determination
 
@@ -34,6 +41,32 @@ Foundations only:
 
 Not in Stage 1: live grants enabled, pilot tenant, webhook/email/SMS/document/publication submit, website/auth/DNS/Worker changes.
 
+## Stage 2 scope
+
+Isolated webhook sandbox, hardened destinations and ResolverPort. Live submit remains disabled.
+
+## Stage 3 scope
+
+Internal-only isolated-CI webhook live lifecycle against a hermetic TLS CI sink.
+
+- State machine and fail-closed transitions
+- `BEGIN IMMEDIATE` atomic claim
+- Atomic confirmation-token and execution-ticket consumption
+- Deterministic idempotency
+- At-most-one automatic provider submission
+- Hermetic TLS CI sink
+- Pinned validated IP with TLS hostname verification
+- No redirects or environment proxy
+- timeout / reset / 5xx → `UNCERTAIN` with no retry
+- 4xx → `FAILED`
+- verified 2xx → `EXECUTED`
+- Crash and stale-`SUBMITTING` recovery without resubmission
+- Cancellation late success → `EXECUTED_AFTER_CANCEL_REQUEST`
+- Circuit breaker and atomic rate/concurrency limits
+- Immutable receipts and evidence
+
+Not in Stage 3: production grant, public live endpoint, website/auth/branding/DNS/D1/Worker/deployment changes, Stage 4.
+
 ## Gates (all default deny)
 
 1. Process env `ZORVIAN_EXTERNAL_EXECUTION` missing/off
@@ -42,11 +75,15 @@ Not in Stage 1: live grants enabled, pilot tenant, webhook/email/SMS/document/pu
 4. Tenant live grant (`enabled` default 0)
 5. Adapter `live_execution_supported` (external adapters remain false)
 
+Isolated CI uses a separate switch `ZORVIAN_ISOLATED_CI_EXECUTION` and an isolated grant. Turning the production switch on denies the isolated path.
+
 Missing or uncertain configuration denies live evaluation.
 
 ## State machine
 
 Allowed transitions only. Stage 1 public helpers may move `PREPARED → SHADOW_COMPLETE`. They must not enter `SUBMITTING` or later live states.
+
+Stage 3 isolated submit may move `SHADOW_COMPLETE → SUBMITTING` and then to `EXECUTED`, `FAILED`, `UNCERTAIN`, or `CANCEL_REQUESTED`. Late success after cancel becomes `EXECUTED_AFTER_CANCEL_REQUEST`.
 
 ## Rollback
 
@@ -54,7 +91,4 @@ Allowed transitions only. Stage 1 public helpers may move `PREPARED → SHADOW_C
 
 ## Recommendation for later stages
 
-First live candidate remains `webhook.post` to a platform-owned HTTPS sink, after Stage 2+ and a separate pilot approval.
-
-
-Stage 2 sandbox, hardened destinations and ResolverPort added. Live submit remains disabled.
+First live candidate remains `webhook.post` to a platform-owned HTTPS sink, after Stage 4+ and a separate pilot approval. Stage 4 has not started.
