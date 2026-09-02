@@ -4,11 +4,13 @@ Deterministic first. Optional AI enrichment only. AI never grants authority.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from intelligence.guard import classify_boundary, redact_secrets
@@ -153,6 +155,16 @@ class GuardianAssessment:
     provider_trust_state: str = "not_applicable"
     guardian_control: dict[str, Any] = field(default_factory=dict)
     user_facing: str = ""
+    purpose: str | None = None
+    pilot_id: str | None = None
+    adapter_id: str | None = None
+    destination_hash: str | None = None
+    manifest_hash: str | None = None
+    policy_hash: str | None = None
+    consequential_action: bool = False
+    context: dict[str, Any] = field(default_factory=dict)
+    context_hash: str | None = None
+    expires_at: str | None = None
 
     def as_public(self) -> dict[str, Any]:
         return {
@@ -270,6 +282,8 @@ def assess(
     financial_dual_control_complete: bool | None = None,
     intent: str = "execute",
     ai_payload: dict[str, Any] | None = None,
+    connection: sqlite3.Connection | None = None,
+    pilot_context: dict[str, Any] | None = None,
 ) -> GuardianAssessment:
     if payload_tenant_id and payload_tenant_id != tenant_id:
         raise PermissionError("Tenant identity cannot be supplied by the client payload")
@@ -529,7 +543,7 @@ def assess(
         "redacted_input": redacted[:500],
     }
 
-    return GuardianAssessment(
+    assessment = GuardianAssessment(
         guardian_assessment_id=str(uuid.uuid4()),
         tenant_id=tenant_id,
         requesting_user_id=user_id,
@@ -563,7 +577,149 @@ def assess(
         provider_trust_state=trust,
         guardian_control=control,
         user_facing=user_facing,
+        consequential_action=bool(consequential_action),
     )
+    if pilot_context:
+        _attach_pilot_context(assessment, pilot_context)
+    if connection is not None:
+        persist_guardian_assessment(connection, assessment)
+    return assessment
+
+
+GUARDIAN_POLICY_VERSION = "guardian-phase1-v1"
+PILOT_PURPOSE = "production_webhook_pilot"
+
+
+def guardian_policy_hash(version: str | None = None) -> str:
+    return hashlib.sha256((version or GUARDIAN_POLICY_VERSION).encode("utf-8")).hexdigest()
+
+
+def canonical_pilot_context(fields: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "purpose": fields.get("purpose") or PILOT_PURPOSE,
+        "pilot_id": fields.get("pilot_id") or "",
+        "tenant_id": fields.get("tenant_id") or "",
+        "requesting_user_id": fields.get("requesting_user_id") or fields.get("requesting_user") or "",
+        "adapter_id": fields.get("adapter_id") or "webhook.post",
+        "action": fields.get("action") or "post_webhook",
+        "destination_hash": fields.get("destination_hash") or "",
+        "manifest_hash": fields.get("manifest_hash") or "",
+        "policy_version": fields.get("policy_version") or GUARDIAN_POLICY_VERSION,
+        "policy_hash": fields.get("policy_hash") or guardian_policy_hash(fields.get("policy_version") or GUARDIAN_POLICY_VERSION),
+        "consequential_action": bool(fields.get("consequential_action", True)),
+        "expiry": fields.get("expiry") or fields.get("expires_at") or "",
+    }
+
+
+def canonical_context_hash(context: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(context, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _attach_pilot_context(assessment: GuardianAssessment, raw: dict[str, Any]) -> None:
+    context = canonical_pilot_context(
+        {
+            **raw,
+            "tenant_id": raw.get("tenant_id") or assessment.tenant_id,
+            "requesting_user_id": raw.get("requesting_user_id") or assessment.requesting_user_id,
+            "action": raw.get("action") or assessment.action,
+        }
+    )
+    assessment.purpose = context["purpose"]
+    assessment.pilot_id = context["pilot_id"]
+    assessment.adapter_id = context["adapter_id"]
+    # bind-time context is immutable on the assessment object
+    assessment.destination_hash = context["destination_hash"]
+    assessment.manifest_hash = context["manifest_hash"]
+    assessment.policy_hash = context["policy_hash"]
+    assessment.consequential_action = bool(context["consequential_action"])
+    assessment.context = context
+    assessment.context_hash = canonical_context_hash(context)
+    assessment.expires_at = context["expiry"] or assessment.expires_at
+
+
+def ensure_guardian_schema(c: sqlite3.Connection) -> None:
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS guardian_assessments(
+            guardian_assessment_id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            requesting_user_id TEXT NOT NULL,
+            module TEXT,
+            action TEXT,
+            execution_allowed INTEGER NOT NULL,
+            decision TEXT NOT NULL,
+            risk_level TEXT,
+            policy_version TEXT NOT NULL,
+            policy_hash TEXT,
+            purpose TEXT,
+            pilot_id TEXT,
+            adapter_id TEXT,
+            destination_hash TEXT,
+            manifest_hash TEXT,
+            consequential_action INTEGER NOT NULL DEFAULT 0,
+            context_json TEXT,
+            context_hash TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            record_json TEXT NOT NULL
+        )
+        '''
+    )
+
+
+def persist_guardian_assessment(c: sqlite3.Connection, assessment: GuardianAssessment, ttl_hours: int = 24) -> str:
+    ensure_guardian_schema(c)
+    created = assessment.created_at
+    try:
+        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+    except ValueError:
+        created_dt = datetime.now(timezone.utc)
+    expires = assessment.expires_at or (created_dt + timedelta(hours=ttl_hours)).isoformat()
+    assessment.expires_at = expires
+    if assessment.context and not assessment.context.get("expiry"):
+        assessment.context["expiry"] = expires
+        assessment.context_hash = canonical_context_hash(assessment.context)
+    decision = "ALLOW" if assessment.execution_allowed else "DENY"
+    c.execute(
+        '''INSERT OR IGNORE INTO guardian_assessments(
+            guardian_assessment_id,tenant_id,requesting_user_id,module,action,
+            execution_allowed,decision,risk_level,policy_version,policy_hash,purpose,pilot_id,
+            adapter_id,destination_hash,manifest_hash,consequential_action,context_json,context_hash,
+            created_at,expires_at,record_json
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        (
+            assessment.guardian_assessment_id,
+            assessment.tenant_id,
+            assessment.requesting_user_id,
+            assessment.module,
+            assessment.action,
+            1 if assessment.execution_allowed else 0,
+            decision,
+            assessment.risk_level,
+            GUARDIAN_POLICY_VERSION,
+            assessment.policy_hash or guardian_policy_hash(),
+            assessment.purpose,
+            assessment.pilot_id,
+            assessment.adapter_id,
+            assessment.destination_hash,
+            assessment.manifest_hash,
+            1 if assessment.consequential_action else 0,
+            json.dumps(assessment.context) if assessment.context else None,
+            assessment.context_hash,
+            created,
+            expires,
+            json.dumps(assessment.as_public()),
+        ),
+    )
+    return assessment.guardian_assessment_id
+
+
+def load_guardian_assessment(c: sqlite3.Connection, assessment_id: str):
+    """SELECT-only. Schema must already exist via controlled bootstrap."""
+    return c.execute(
+        "SELECT * FROM guardian_assessments WHERE guardian_assessment_id=?",
+        (assessment_id,),
+    ).fetchone()
 
 
 def evidence_gap(approvals: list | None, legal_ok: bool | None, financial_ok: bool | None) -> bool:
