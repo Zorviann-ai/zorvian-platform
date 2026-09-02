@@ -131,6 +131,9 @@ PROVIDERS: dict[str, type[ClosedProvider]] = {
 }
 
 
-def get_provider(adapter: ExecutionAdapter) -> ClosedProvider:
+def get_provider(adapter: ExecutionAdapter, *, mode: str = "production") -> ClosedProvider:
+    """Production always receives ClosedProvider. Sandbox is never selected here."""
+    if mode == "production" or mode is None:
+        return ClosedProvider(adapter)
     cls = PROVIDERS.get(adapter.adapter_id, ClosedProvider)
     return cls(adapter)
