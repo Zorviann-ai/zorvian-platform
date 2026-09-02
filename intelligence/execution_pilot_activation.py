@@ -501,6 +501,8 @@ def _consume_challenge(c: sqlite3.Connection, *, pilot_id: str, nonce: str, evid
     expires = _parse_iso(row["expires_at"])
     if expires is None or expires <= _now():
         raise ActivationDenied("activation challenge is expired")
+    if row["tenant_id"] != evidence["tenant_id"]:
+        raise ActivationDenied("activation challenge tenant mismatch")
     if row["manifest_hash"] != evidence["prep"]["manifest_hash"]:
         raise ActivationDenied("activation challenge manifest hash mismatch")
     if (row["guardian_context_hash"] or "") != evidence["context_hash"]:
@@ -535,6 +537,93 @@ def _same_ceremony_duplicate(c: sqlite3.Connection, *, existing, nonce: str, pri
     return True
 
 
+def activate_pilot_locked(
+    c: sqlite3.Connection,
+    *,
+    pilot_id: str,
+    principal: PlatformPrincipal,
+    challenge_nonce: str,
+    window_minutes: int = MAX_WINDOW_MINUTES,
+    max_successes: int = MAX_SUCCESSES,
+    max_concurrent: int = MAX_CONCURRENT,
+    max_retries: int = MAX_RETRIES,
+) -> dict[str, Any]:
+    """Apply activation inside an already-open writer transaction. Caller commits or rolls back."""
+    _require_principal(principal)
+    if window_minutes > MAX_WINDOW_MINUTES or window_minutes < 1:
+        raise ActivationDenied("activation window exceeds hard limit")
+    if max_successes > MAX_SUCCESSES or max_successes < 1:
+        raise ActivationDenied("success quota exceeds hard limit")
+    if max_concurrent > MAX_CONCURRENT or max_concurrent < 1:
+        raise ActivationDenied("concurrency exceeds hard limit")
+    if max_retries != MAX_RETRIES:
+        raise ActivationDenied("retries are not permitted")
+    if not c.in_transaction:
+        raise ActivationDenied("activation lock requires an open writer transaction")
+    evidence = _revalidate_for_ceremony(c, pilot_id)
+    if principal.actor_id not in {evidence["owner_id"], evidence["security_id"]}:
+        raise ActivationDenied("principal is not a recorded platform approver")
+    existing = c.execute("SELECT * FROM execution_pilot_activations WHERE pilot_id=?", (pilot_id,)).fetchone()
+    if existing is not None:
+        if not _same_ceremony_duplicate(c, existing=existing, nonce=challenge_nonce, principal=principal, evidence=evidence):
+            raise ActivationDenied("activation already exists for a different ceremony")
+        out = _public_activation(dict(existing), duplicate=True)
+        out["provider_calls"] = 0
+        return out
+    prep = evidence["prep"]
+    challenge_id = _consume_challenge(c, pilot_id=pilot_id, nonce=challenge_nonce, evidence=evidence)
+    now = _now()
+    activated_at = _iso(now)
+    expires_at = _iso(now + timedelta(minutes=window_minutes))
+    activation_id = str(uuid.uuid4())
+    c.execute(
+        """INSERT OR IGNORE INTO execution_destination_allowlist(tenant_id,adapter_id,destination_hash,label,created_at)
+           VALUES (?,?,?,?,?)""",
+        (prep["tenant_id"], ADAPTER_ID, prep["destination_hash"], "stage4c1-pilot", activated_at),
+    )
+    c.execute(
+        """INSERT INTO execution_live_grants(tenant_id,adapter_id,action,env,enabled,created_by,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?)
+           ON CONFLICT(tenant_id,adapter_id,action,env) DO UPDATE SET enabled=1, updated_at=excluded.updated_at""",
+        (prep["tenant_id"], ADAPTER_ID, ACTION, ACTIVATION_ENV, 1, principal.actor_id, activated_at, activated_at),
+    )
+    marked = c.execute(
+        """UPDATE execution_pilot_preparations
+           SET status='ACTIVE', updated_at=? WHERE pilot_id=? AND tenant_id=? AND status='PREPARED'""",
+        (activated_at, pilot_id, prep["tenant_id"]),
+    ).rowcount
+    if marked != 1:
+        raise ActivationDenied("pilot could not be marked ACTIVE")
+    c.execute(
+        """INSERT INTO execution_pilot_activations(
+            activation_id,pilot_id,tenant_id,adapter_id,destination_hash,manifest_hash,
+            signing_key_id,platform_owner_id,security_operator_id,challenge_id,
+            activated_at,expires_at,max_successes,max_concurrent,max_retries,
+            successes_claimed,concurrent_claimed,status,created_at,
+            guardian_assessment_id,guardian_context_hash,policy_version,policy_hash
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            activation_id, pilot_id, prep["tenant_id"], ADAPTER_ID, prep["destination_hash"],
+            prep["manifest_hash"], prep["signing_key_id"], evidence["owner_id"], evidence["security_id"],
+            challenge_id, activated_at, expires_at, max_successes, max_concurrent, max_retries,
+            0, 0, "ACTIVE", activated_at,
+            (evidence.get("assessment") or {}).get("guardian_assessment_id"),
+            evidence.get("context_hash"),
+            GUARDIAN_POLICY_VERSION,
+            evidence.get("policy_hash") or guardian_policy_hash(),
+        ),
+    )
+    _ops_audit(
+        c, tenant_id=prep["tenant_id"], actor_id=principal.actor_id, event="pilot_activated",
+        pilot_id=pilot_id, detail={"activation_id": activation_id, "provider_calls": 0},
+    )
+    row = c.execute("SELECT * FROM execution_pilot_activations WHERE activation_id=?", (activation_id,)).fetchone()
+    out = _public_activation(dict(row), duplicate=False)
+    out["provider_calls"] = 0
+    out["production_provider"] = type(get_provider(get_adapter(ADAPTER_ID))).__name__
+    return out
+
+
 def activate_pilot(
     c: sqlite3.Connection,
     *,
@@ -547,91 +636,23 @@ def activate_pilot(
     max_retries: int = MAX_RETRIES,
 ) -> dict[str, Any]:
     _require_principal(principal)
-    if window_minutes > MAX_WINDOW_MINUTES or window_minutes < 1:
-        raise ActivationDenied("activation window exceeds hard limit")
-    if max_successes > MAX_SUCCESSES or max_successes < 1:
-        raise ActivationDenied("success quota exceeds hard limit")
-    if max_concurrent > MAX_CONCURRENT or max_concurrent < 1:
-        raise ActivationDenied("concurrency exceeds hard limit")
-    if max_retries != MAX_RETRIES:
-        raise ActivationDenied("retries are not permitted")
     if c.in_transaction:
         raise ActivationDenied("open transaction exists")
-
-    provider_calls = {"count": 0}
     try:
         _begin_immediate(c)
-        evidence = _revalidate_for_ceremony(c, pilot_id)
-        if principal.actor_id not in {evidence["owner_id"], evidence["security_id"]}:
-            raise ActivationDenied("principal is not a recorded platform approver")
-        existing = c.execute("SELECT * FROM execution_pilot_activations WHERE pilot_id=?", (pilot_id,)).fetchone()
-        if existing is not None:
-            if not _same_ceremony_duplicate(c, existing=existing, nonce=challenge_nonce, principal=principal, evidence=evidence):
-                raise ActivationDenied("activation already exists for a different ceremony")
-            _commit_activation_claim(c)
-            out = _public_activation(dict(existing), duplicate=True)
-            out["provider_calls"] = 0
-            return out
-        prep = evidence["prep"]
-        challenge_id = _consume_challenge(c, pilot_id=pilot_id, nonce=challenge_nonce, evidence=evidence)
-        now = _now()
-        activated_at = _iso(now)
-        expires_at = _iso(now + timedelta(minutes=window_minutes))
-        activation_id = str(uuid.uuid4())
-        c.execute(
-            """INSERT OR IGNORE INTO execution_destination_allowlist(tenant_id,adapter_id,destination_hash,label,created_at)
-               VALUES (?,?,?,?,?)""",
-            (prep["tenant_id"], ADAPTER_ID, prep["destination_hash"], "stage4c1-pilot", activated_at),
-        )
-        c.execute(
-            """INSERT INTO execution_live_grants(tenant_id,adapter_id,action,env,enabled,created_by,created_at,updated_at)
-               VALUES (?,?,?,?,?,?,?,?)
-               ON CONFLICT(tenant_id,adapter_id,action,env) DO UPDATE SET enabled=1, updated_at=excluded.updated_at""",
-            (prep["tenant_id"], ADAPTER_ID, ACTION, ACTIVATION_ENV, 1, principal.actor_id, activated_at, activated_at),
-        )
-        marked = c.execute(
-            """UPDATE execution_pilot_preparations
-               SET status='ACTIVE', updated_at=? WHERE pilot_id=? AND tenant_id=? AND status='PREPARED'""",
-            (activated_at, pilot_id, prep["tenant_id"]),
-        ).rowcount
-        if marked != 1:
-            raise ActivationDenied("pilot could not be marked ACTIVE")
-        c.execute(
-            """INSERT INTO execution_pilot_activations(
-                activation_id,pilot_id,tenant_id,adapter_id,destination_hash,manifest_hash,
-                signing_key_id,platform_owner_id,security_operator_id,challenge_id,
-                activated_at,expires_at,max_successes,max_concurrent,max_retries,
-                successes_claimed,concurrent_claimed,status,created_at,
-                guardian_assessment_id,guardian_context_hash,policy_version,policy_hash
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                activation_id, pilot_id, prep["tenant_id"], ADAPTER_ID, prep["destination_hash"],
-                prep["manifest_hash"], prep["signing_key_id"], evidence["owner_id"], evidence["security_id"],
-                challenge_id, activated_at, expires_at, max_successes, max_concurrent, max_retries,
-                0, 0, "ACTIVE", activated_at,
-                (evidence.get("assessment") or {}).get("guardian_assessment_id"),
-                evidence.get("context_hash"),
-                GUARDIAN_POLICY_VERSION,
-                evidence.get("policy_hash") or guardian_policy_hash(),
-            ),
-        )
-        _ops_audit(
-            c, tenant_id=prep["tenant_id"], actor_id=principal.actor_id, event="pilot_activated",
-            pilot_id=pilot_id, detail={"activation_id": activation_id, "provider_calls": 0},
+        out = activate_pilot_locked(
+            c, pilot_id=pilot_id, principal=principal, challenge_nonce=challenge_nonce,
+            window_minutes=window_minutes, max_successes=max_successes,
+            max_concurrent=max_concurrent, max_retries=max_retries,
         )
         _commit_activation_claim(c)
+        return out
     except sqlite3.IntegrityError as exc:
         _rollback_quietly(c)
         raise ActivationDenied("only one ACTIVE pilot is permitted per tenant and adapter") from exc
     except Exception:
         _rollback_quietly(c)
         raise
-
-    row = c.execute("SELECT * FROM execution_pilot_activations WHERE activation_id=?", (activation_id,)).fetchone()
-    out = _public_activation(dict(row), duplicate=False)
-    out["provider_calls"] = provider_calls["count"]
-    out["production_provider"] = type(get_provider(get_adapter(ADAPTER_ID))).__name__
-    return out
 
 
 def _public_activation(row: dict[str, Any], *, duplicate: bool) -> dict[str, Any]:
