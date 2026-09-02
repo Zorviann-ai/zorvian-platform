@@ -79,10 +79,12 @@ def ensure_execution_schema(c: sqlite3.Connection) -> None:
     from intelligence.execution_live import ensure_phase3_schema
     from intelligence.execution_pilot_ops import ensure_stage4b_schema
     from intelligence.execution_pilot_activation import ensure_stage4c1_schema
+    from intelligence.execution_pilot_reconciliation import ensure_stage4c2_schema
     ensure_adapter_schema(c)
     ensure_phase3_schema(c)
     ensure_stage4b_schema(c)
     ensure_stage4c1_schema(c)
+    ensure_stage4c2_schema(c)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS execution_tickets(

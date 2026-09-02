@@ -202,6 +202,10 @@ def ensure_stage4c1_schema(c: sqlite3.Connection) -> None:
     for stmt in (
         "ALTER TABLE execution_pilot_activations ADD COLUMN successes_claimed INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE execution_pilot_activations ADD COLUMN concurrent_claimed INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE execution_pilot_activations ADD COLUMN guardian_assessment_id TEXT",
+        "ALTER TABLE execution_pilot_activations ADD COLUMN guardian_context_hash TEXT",
+        "ALTER TABLE execution_pilot_activations ADD COLUMN policy_version TEXT",
+        "ALTER TABLE execution_pilot_activations ADD COLUMN policy_hash TEXT",
     ):
         try:
             c.execute(stmt)
@@ -597,13 +601,18 @@ def activate_pilot(
                 activation_id,pilot_id,tenant_id,adapter_id,destination_hash,manifest_hash,
                 signing_key_id,platform_owner_id,security_operator_id,challenge_id,
                 activated_at,expires_at,max_successes,max_concurrent,max_retries,
-                successes_claimed,concurrent_claimed,status,created_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                successes_claimed,concurrent_claimed,status,created_at,
+                guardian_assessment_id,guardian_context_hash,policy_version,policy_hash
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 activation_id, pilot_id, prep["tenant_id"], ADAPTER_ID, prep["destination_hash"],
                 prep["manifest_hash"], prep["signing_key_id"], evidence["owner_id"], evidence["security_id"],
                 challenge_id, activated_at, expires_at, max_successes, max_concurrent, max_retries,
                 0, 0, "ACTIVE", activated_at,
+                (evidence.get("assessment") or {}).get("guardian_assessment_id"),
+                evidence.get("context_hash"),
+                GUARDIAN_POLICY_VERSION,
+                evidence.get("policy_hash") or guardian_policy_hash(),
             ),
         )
         _ops_audit(
@@ -728,6 +737,25 @@ def _assert_activation_live(c: sqlite3.Connection, row, *, action: str) -> None:
     )
     if evidence["status"] != "PASS":
         raise ActivationDenied(f"guardian evidence {evidence['status']}")
+    bind = c.execute(
+        """SELECT guardian_assessment_id FROM execution_pilot_guardian_bindings
+           WHERE pilot_id=? AND tenant_id=? ORDER BY created_at DESC LIMIT 1""",
+        (row["pilot_id"], row["tenant_id"]),
+    ).fetchone()
+    stored_gid = row["guardian_assessment_id"] if "guardian_assessment_id" in row.keys() else None
+    stored_ctx = row["guardian_context_hash"] if "guardian_context_hash" in row.keys() else None
+    if stored_gid and bind and bind["guardian_assessment_id"] != stored_gid:
+        raise ActivationDenied("guardian assessment id mismatch")
+    if stored_ctx:
+        assessment = load_guardian_assessment(c, bind["guardian_assessment_id"]) if bind else None
+        if assessment is None or (dict(assessment).get("context_hash") or "") != stored_ctx:
+            raise ActivationDenied("guardian context hash mismatch")
+    if row["policy_version"] if "policy_version" in row.keys() else None:
+        if row["policy_version"] not in {None, "", GUARDIAN_POLICY_VERSION}:
+            raise ActivationDenied("guardian policy version mismatch")
+    if row["policy_hash"] if "policy_hash" in row.keys() else None:
+        if row["policy_hash"] not in {None, "", guardian_policy_hash()}:
+            raise ActivationDenied("guardian policy hash mismatch")
 
 
 def enforce_activation_for_runtime(
@@ -824,6 +852,55 @@ def claim_activation_success(
         raise
 
 
+def _suspend_pilot_locked(
+    c: sqlite3.Connection,
+    *,
+    pilot_id: str,
+    principal: PlatformPrincipal,
+    reason: str,
+) -> dict[str, Any]:
+    """Apply suspension inside an already-open writer transaction."""
+    _require_principal(principal)
+    prep = _load_prep_any(c, pilot_id)
+    stored_tenant = prep["tenant_id"]
+    actor = principal.actor_id
+    set_kill_switch(
+        c, scope="tenant_adapter", enabled=True, reason=reason, actor_id=actor,
+        tenant_id=stored_tenant, adapter_id=ADAPTER_ID,
+    )
+    c.execute(
+        """UPDATE execution_live_grants SET enabled=0, updated_at=?
+           WHERE tenant_id=? AND adapter_id=? AND action=? AND env=?""",
+        (_iso(), stored_tenant, ADAPTER_ID, ACTION, ACTIVATION_ENV),
+    )
+    c.execute(
+        """DELETE FROM execution_destination_allowlist
+           WHERE tenant_id=? AND adapter_id=? AND destination_hash=?""",
+        (stored_tenant, ADAPTER_ID, prep["destination_hash"]),
+    )
+    marked = c.execute(
+        """UPDATE execution_pilot_preparations
+           SET status='SUSPENDED', last_denial=?, updated_at=? WHERE pilot_id=?""",
+        (reason, _iso(), pilot_id),
+    ).rowcount
+    if marked < 1:
+        raise ActivationDenied("pilot preparation could not be suspended")
+    c.execute("UPDATE execution_pilot_activations SET status='SUSPENDED' WHERE pilot_id=?", (pilot_id,))
+    grant = c.execute(
+        "SELECT enabled FROM execution_live_grants WHERE tenant_id=? AND adapter_id=? AND action=? AND env=?",
+        (stored_tenant, ADAPTER_ID, ACTION, ACTIVATION_ENV),
+    ).fetchone()
+    allow = c.execute(
+        "SELECT 1 FROM execution_destination_allowlist WHERE tenant_id=? AND adapter_id=? AND destination_hash=?",
+        (stored_tenant, ADAPTER_ID, prep["destination_hash"]),
+    ).fetchone()
+    act = c.execute("SELECT status FROM execution_pilot_activations WHERE pilot_id=?", (pilot_id,)).fetchone()
+    if grant is None or grant["enabled"] != 0 or allow is not None or act is None or act["status"] != "SUSPENDED":
+        raise ActivationDenied("suspension could not close the exact pilot controls")
+    _ops_audit(c, tenant_id=stored_tenant, actor_id=actor, event="pilot_suspended", pilot_id=pilot_id, detail={"reason": reason})
+    return {"pilot_id": pilot_id, "status": "SUSPENDED", "external_execution_enabled": False, "evidence_preserved": True, "tenant_id": stored_tenant}
+
+
 def suspend_pilot(
     c: sqlite3.Connection,
     *,
@@ -836,35 +913,12 @@ def suspend_pilot(
         raise ActivationDenied("open transaction exists")
     try:
         _begin_immediate(c)
-        prep = _load_prep_any(c, pilot_id)
-        stored_tenant = prep["tenant_id"]
-        actor = principal.actor_id
-        set_kill_switch(
-            c, scope="tenant_adapter", enabled=True, reason=reason, actor_id=actor,
-            tenant_id=stored_tenant, adapter_id=ADAPTER_ID,
-        )
-        c.execute(
-            """UPDATE execution_live_grants SET enabled=0, updated_at=?
-               WHERE tenant_id=? AND adapter_id=? AND action=? AND env=?""",
-            (_iso(), stored_tenant, ADAPTER_ID, ACTION, ACTIVATION_ENV),
-        )
-        c.execute(
-            """DELETE FROM execution_destination_allowlist
-               WHERE tenant_id=? AND adapter_id=? AND destination_hash=?""",
-            (stored_tenant, ADAPTER_ID, prep["destination_hash"]),
-        )
-        c.execute(
-            """UPDATE execution_pilot_preparations
-               SET status='SUSPENDED', last_denial=?, updated_at=? WHERE pilot_id=?""",
-            (reason, _iso(), pilot_id),
-        )
-        c.execute("UPDATE execution_pilot_activations SET status='SUSPENDED' WHERE pilot_id=?", (pilot_id,))
-        _ops_audit(c, tenant_id=stored_tenant, actor_id=actor, event="pilot_suspended", pilot_id=pilot_id, detail={"reason": reason})
+        out = _suspend_pilot_locked(c, pilot_id=pilot_id, principal=principal, reason=reason)
         _commit_activation_claim(c)
     except Exception:
         _rollback_quietly(c)
         raise
-    return {"pilot_id": pilot_id, "status": "SUSPENDED", "external_execution_enabled": False, "evidence_preserved": True}
+    return out
 
 
 def preflight_activation(
