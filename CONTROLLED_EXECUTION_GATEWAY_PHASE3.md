@@ -97,6 +97,10 @@ Production-grade webhook pilot capability, switched off. Provider selection defa
 
 ## Stage 4B scope
 
-Operator-controlled readiness, two-person preparation, precheck, shutdown and observability. Status remains PREPARED. Stage 4C activation has not started and no activation route exists.
+Operator-controlled readiness, two-person preparation, precheck, shutdown and observability. Status remains PREPARED until a separate Stage 4C1 ceremony.
 
-First live candidate remains `webhook.post` to a platform-owned HTTPS sink after a separate Stage 4C approval.
+## Stage 4C1 scope
+
+Activation control plane only. No tenant is activated by merge. No HTTP activation route. ClosedProvider remains the default. Stage 4C2 is not started.
+
+First live candidate remains `webhook.post` to a platform-owned HTTPS sink after a later Stage 4C2 ceremony.
