@@ -10,7 +10,9 @@ from email.message import EmailMessage
 
 APP_VERSION="1.1.0"
 ENV=os.getenv("ZORVIAN_ENV","production").lower()
-DB=os.getenv("SQLITE_PATH",os.path.join(os.path.dirname(__file__),"zorvian.db"))
+def db_path():
+ return os.getenv("SQLITE_PATH",os.path.join(os.path.dirname(__file__),"zorvian.db"))
+DB=db_path()
 SESSION_HOURS=int(os.getenv("SESSION_HOURS","12")); LOCKOUT_MINUTES=int(os.getenv("LOCKOUT_MINUTES","15")); MAX_FAILED_LOGINS=int(os.getenv("MAX_FAILED_LOGINS","5"))
 ALLOWED_ORIGINS=[x.strip() for x in os.getenv("ALLOWED_ORIGINS","https://zorvian.co.uk,https://www.zorvian.co.uk").split(",") if x.strip()]
 PUBLIC_APP_URL=os.getenv("PUBLIC_APP_URL","https://zorvian.co.uk").rstrip("/")
@@ -22,7 +24,7 @@ def now_dt(): return datetime.datetime.now(datetime.timezone.utc)
 def now(): return now_dt().isoformat().replace("+00:00","Z")
 def future(minutes=0,hours=0,days=0): return (now_dt()+datetime.timedelta(minutes=minutes,hours=hours,days=days)).isoformat().replace("+00:00","Z")
 def db():
- c=sqlite3.connect(DB,timeout=20); c.row_factory=sqlite3.Row; c.execute("PRAGMA foreign_keys=ON"); c.execute("PRAGMA journal_mode=WAL"); return c
+ c=sqlite3.connect(db_path(),timeout=20); c.row_factory=sqlite3.Row; c.execute("PRAGMA foreign_keys=ON"); c.execute("PRAGMA journal_mode=WAL"); return c
 def columns(c,t): return {r["name"] for r in c.execute(f"PRAGMA table_info({t})").fetchall()}
 def add_column(c,t,d):
  n=d.split()[0]
