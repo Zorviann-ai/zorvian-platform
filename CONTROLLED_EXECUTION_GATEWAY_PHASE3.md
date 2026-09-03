@@ -118,3 +118,7 @@ Sealed Caelomere operator ceremony runner. Preflight is read-only. Execute requi
 ## Stage 4F scope
 
 Sealed one-shot production-pilot dispatch and automatic closeout. Reuses Stage 4A–4E provider, activation, claim, reconciliation and receipt machinery. No public dispatch route. Merge still activates nobody and sends no webhook.
+
+## Stage 4G scope
+
+Path monopoly and Phase 3 freeze. `execute_once()` is the only production-submit path. HTTP `/live` and public `submit_production_pilot()` are permanently fail-closed. The private engine consumes a one-use in-context ticket armed only by `execute_once()`. Merge still activates nobody and sends no webhook.

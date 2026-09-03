@@ -56,6 +56,21 @@ PILOT_TENANT = "stage4a-pilot-tenant"
 BODY = {"event": "pilot", "ref": "4a"}
 
 
+@pytest.fixture(autouse=True)
+def _stage4a_engine_for_claim_tests(monkeypatch, request):
+    from intelligence.execution_production_webhook import _claimed_production_submit
+    monkeypatch.setattr(request.module, "submit_production_pilot", _claimed_production_submit)
+    monkeypatch.setattr(
+        "intelligence.execution_production_webhook.submit_production_pilot",
+        _claimed_production_submit,
+    )
+    monkeypatch.setattr(
+        "intelligence.execution_production_webhook._consume_submit_authority",
+        lambda: None,
+    )
+    yield
+
+
 def conn():
     c = sqlite3.connect(":memory:", check_same_thread=False)
     c.row_factory = sqlite3.Row
@@ -497,11 +512,15 @@ def test_verified_2xx_and_duplicate():
     assert len(transport.calls) == 1
 
 
-def test_live_endpoint_exists_and_requires_auth():
+def test_live_endpoint_exists_and_is_permanently_denied():
     src = Path("app_gate5.py").read_text()
     assert '@app.post("/api/execution/plans/{plan_id}/live")' in src
-    assert "confirmation token is required" in src
-    assert "Tenant identity cannot be supplied by the client payload" in src
+    live = src.split('@app.post("/api/execution/plans/{plan_id}/live")', 1)[1].split("@app.", 1)[0]
+    assert "refuse_live_http_dispatch()" in live
+    assert "submit_production_pilot(" not in live
+    assert "submit_production_pilot(" not in src
+    assert "confirmation token is required" not in live
+    assert "Tenant identity cannot be supplied by the client payload" not in live
 
 
 def test_tls_hostname_cannot_be_disabled():
