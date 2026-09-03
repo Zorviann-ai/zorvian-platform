@@ -5,6 +5,7 @@ deployment. Default production configuration cannot execute.
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import hmac
 import json
@@ -13,8 +14,11 @@ import secrets
 import socket
 import sqlite3
 import ssl
+import sys
+import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Callable
@@ -663,6 +667,59 @@ def public_attempt(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_SUBMIT_IN_FLIGHT = contextvars.ContextVar("stage4g_submit_in_flight", default=False)
+_SUBMIT_TICKET = contextvars.ContextVar("stage4g_submit_ticket", default=None)
+
+
+class _SubmitTicket:
+    __slots__ = ("_consumed", "_lock")
+
+    def __init__(self) -> None:
+        self._consumed = False
+        self._lock = threading.Lock()
+
+    def consume(self) -> None:
+        with self._lock:
+            if self._consumed:
+                raise ProductionPilotDenied("production submit is reserved to Stage 4F execute_once")
+            self._consumed = True
+
+
+def _caller_is_execute_once() -> bool:
+    frame = sys._getframe(1)
+    while frame is not None:
+        name = frame.f_code.co_name
+        mod = frame.f_globals.get("__name__") or ""
+        if name in {"_caller_is_execute_once", "_stage4f_submit_authority"} or mod.startswith("contextlib"):
+            frame = frame.f_back
+            continue
+        return name == "execute_once" and mod == "intelligence.execution_pilot_dispatch"
+    return False
+
+
+@contextmanager
+def _stage4f_submit_authority():
+    ticket = _SubmitTicket() if _caller_is_execute_once() else None
+    token = _SUBMIT_TICKET.set(ticket)
+    try:
+        yield
+    finally:
+        _SUBMIT_TICKET.reset(token)
+
+
+def _consume_submit_authority() -> None:
+    ticket = _SUBMIT_TICKET.get()
+    if not isinstance(ticket, _SubmitTicket):
+        raise ProductionPilotDenied("production submit is reserved to Stage 4F execute_once")
+    ticket.consume()
+    _SUBMIT_TICKET.set(None)
+
+
+def refuse_live_http_dispatch() -> None:
+    """Public /live must never reach a provider."""
+    raise ProductionPilotDenied("live HTTP dispatch is permanently closed; use Stage 4F execute_once")
+
+
 def submit_production_pilot(
     c: sqlite3.Connection,
     *,
@@ -680,6 +737,40 @@ def submit_production_pilot(
     _after_claim_writes: Callable[[], None] | None = None,
     _commit_claim: Callable[[sqlite3.Connection], None] | None = None,
 ) -> dict[str, Any]:
+    raise ProductionPilotDenied("production submit is reserved to Stage 4F execute_once")
+
+
+def _deny_reentrant_submit(fn):
+    def wrapped(*args, **kwargs):
+        if _SUBMIT_IN_FLIGHT.get():
+            raise ProductionPilotDenied("re-entrant production submit is denied")
+        token = _SUBMIT_IN_FLIGHT.set(True)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _SUBMIT_IN_FLIGHT.reset(token)
+    return wrapped
+
+
+@_deny_reentrant_submit
+def _claimed_production_submit(
+    c: sqlite3.Connection,
+    *,
+    tenant_id: str,
+    user_id: str,
+    plan_id: str,
+    confirmation_token: str,
+    role: str = "owner",
+    payload: dict[str, Any] | None = None,
+    destination: str | None = None,
+    transport=None,
+    resolver: ResolverPort | None = None,
+    tls_port: int | None = None,
+    ca_file: str | None = None,
+    _after_claim_writes: Callable[[], None] | None = None,
+    _commit_claim: Callable[[sqlite3.Connection], None] | None = None,
+) -> dict[str, Any]:
+    _consume_submit_authority()
     caller_tx = _in_transaction(c)
     ensure_stage4a_schema(c)
     if not caller_tx and _in_transaction(c):

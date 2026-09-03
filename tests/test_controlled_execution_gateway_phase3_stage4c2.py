@@ -103,6 +103,21 @@ def _clean():
     os.environ.pop(SECURITY_IDS_ENV, None)
 
 
+@pytest.fixture(autouse=True)
+def _stage4c2_engine_for_claim_tests(monkeypatch, request):
+    from intelligence.execution_production_webhook import _claimed_production_submit
+    monkeypatch.setattr(request.module, "submit_production_pilot", _claimed_production_submit)
+    monkeypatch.setattr(
+        "intelligence.execution_production_webhook.submit_production_pilot",
+        _claimed_production_submit,
+    )
+    monkeypatch.setattr(
+        "intelligence.execution_production_webhook._consume_submit_authority",
+        lambda: None,
+    )
+    yield
+
+
 def _activated(c):
     prep = _ready_pilot(c)
     _arm_secret()

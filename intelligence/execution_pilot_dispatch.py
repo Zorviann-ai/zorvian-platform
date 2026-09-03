@@ -37,7 +37,8 @@ from intelligence.execution_production_webhook import (
     ProductionPilotDenied,
     ProductionUncertain,
     circuit_open,
-    submit_production_pilot,
+    _claimed_production_submit,
+    _stage4f_submit_authority,
 )
 from intelligence.execution_providers import ClosedProvider, get_provider
 from intelligence.guardian import GUARDIAN_POLICY_VERSION, guardian_policy_hash
@@ -520,18 +521,19 @@ def execute_once(
         )
 
     try:
-        result = submit_production_pilot(
-            c,
-            tenant_id=bundle["tenant_id"],
-            user_id=bundle["plan_user_id"],
-            plan_id=plan_id,
-            confirmation_token=plan_confirmation_token,
-            role="owner",
-            transport=transport,
-            resolver=resolver,
-            _after_claim_writes=after_claim_writes,
-            _commit_claim=_commit_claim or _commit_dispatch,
-        )
+        with _stage4f_submit_authority():
+            result = _claimed_production_submit(
+                c,
+                tenant_id=bundle["tenant_id"],
+                user_id=bundle["plan_user_id"],
+                plan_id=plan_id,
+                confirmation_token=plan_confirmation_token,
+                role="owner",
+                transport=transport,
+                resolver=resolver,
+                _after_claim_writes=after_claim_writes,
+                _commit_claim=_commit_claim or _commit_dispatch,
+            )
     except (ProductionPilotDenied, ProductionUncertain, ActivationDenied, CeremonyDenied) as exc:
         raise DispatchDenied(str(exc)) from exc
 

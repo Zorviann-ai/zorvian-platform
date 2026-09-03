@@ -78,6 +78,21 @@ def conn():
 
 
 @pytest.fixture(autouse=True)
+def _stage4d_engine_for_claim_tests(monkeypatch, request):
+    from intelligence.execution_production_webhook import _claimed_production_submit
+    monkeypatch.setattr(request.module, "submit_production_pilot", _claimed_production_submit)
+    monkeypatch.setattr(
+        "intelligence.execution_production_webhook.submit_production_pilot",
+        _claimed_production_submit,
+    )
+    monkeypatch.setattr(
+        "intelligence.execution_production_webhook._consume_submit_authority",
+        lambda: None,
+    )
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _clean():
     for key in [
         "ZORVIAN_EXTERNAL_EXECUTION", "ZORVIAN_WEBHOOK_PILOT_ENABLED",

@@ -21,11 +21,10 @@ from intelligence.guardian import assess as assess_guardian, parse_ai_guardian_p
 from intelligence.orchestrator import decide as constitutional_decide
 from intelligence.execution import prepare as prepare_execution, load_ticket, consume_execution_ticket
 from intelligence.execution_adapters import AdapterDenied, dry_run_execution_plan, execute_execution_plan, load_plan, prepare_execution_plan, public_plan
-from intelligence.execution_live import LiveDenied
 from intelligence.execution_production_webhook import (
     ProductionPilotDenied,
     public_attempt,
-    submit_production_pilot,
+    refuse_live_http_dispatch,
 )
 from intelligence.execution_receipts import list_receipts_for_attempt as _list_receipts, public_receipt
 from intelligence.execution_pilot_ops import (
@@ -824,39 +823,11 @@ def execution_plan_dry_run(plan_id: str, d: ExecutionPlanFollowIn | None = None,
 
 @app.post("/api/execution/plans/{plan_id}/live")
 def execution_plan_live(plan_id: str, request: Request, d: ExecutionPlanFollowIn | None = None, u=Depends(current_user)):
-    if u.get("role") not in {"owner", "admin", "execution_live"}:
-        raise HTTPException(403, "role is not authorised for live execution")
-    if u["role"] != "execution_live":
-        require(u, "write")
-    if d and d.tenant_id and d.tenant_id != u["tenant_id"]:
-        raise HTTPException(403, "Tenant identity cannot be supplied by the client payload")
-    token = None if d is None else d.confirmation_token
-    if not token:
-        raise HTTPException(403, "confirmation token is required")
-    origin = request.headers.get("origin") or request.headers.get("referer")
-    auth = request.headers.get("authorization") or ""
-    if origin and not auth.lower().startswith("bearer "):
-        raise HTTPException(403, "CSRF protection requires a bearer token for live execution")
-    c = core_db()
+    _ = (plan_id, request, d, u)
     try:
-        out = submit_production_pilot(
-            c,
-            tenant_id=u["tenant_id"],
-            user_id=u["id"],
-            plan_id=plan_id,
-            confirmation_token=token,
-            role=u.get("role") or "owner",
-            payload=None if d is None else d.payload,
-            destination=None if d is None else d.destination,
-        )
-    except (ProductionPilotDenied, LiveDenied, AdapterDenied) as exc:
-        c.close()
-        audit(u, "execution_live_denied", str(exc), "warning")
-        raise HTTPException(403, str(exc))
-    c.close()
-    audit(u, "execution_live_attempted", plan_id)
-    out["external_execution_enabled"] = False
-    return out
+        refuse_live_http_dispatch()
+    except ProductionPilotDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
 
 
 @app.get("/api/execution/plans/{plan_id}/attempts")
