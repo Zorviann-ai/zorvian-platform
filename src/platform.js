@@ -15,9 +15,116 @@ import { handleTelnyx } from './telnyx.js';
 import { handleTutor } from './tutor.js';
 import { handleMaker } from './maker.js';
 
-const SECURITY_HEADERS={'x-content-type-options':'nosniff','x-frame-options':'DENY','referrer-policy':'strict-origin-when-cross-origin','permissions-policy':'camera=(), microphone=(self), geolocation=(), payment=()','cross-origin-resource-policy':'same-origin'};
-function secure(response){const headers=new Headers(response.headers);for(const [name,value] of Object.entries(SECURITY_HEADERS))headers.set(name,value);return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
-function blocksCrossSiteCookieWrite(request){if(!['POST','PUT','PATCH','DELETE'].includes(request.method))return false;if(new URL(request.url).pathname.startsWith('/api/maker/public/'))return false;if(!request.headers.get('Cookie'))return false;const origin=request.headers.get('Origin');return Boolean(origin&&origin!==new URL(request.url).origin);}
-async function enhanceCRM(response){const type=response.headers.get('content-type')||'';if(!response.ok||!type.includes('text/html'))return response;let html=await response.text();const patch=`<script>(()=>{const byId=id=>document.getElementById(id);const ensureStatus=()=>{if(byId('crmSaveStatus'))return byId('crmSaveStatus');const box=document.createElement('div');box.id='crmSaveStatus';box.style.cssText='position:fixed;right:22px;bottom:22px;z-index:9999;display:none;max-width:420px;padding:12px 16px;border-radius:10px;background:#111820;color:white;box-shadow:0 12px 35px rgba(0,0,0,.2);font:700 12px Arial';document.body.appendChild(box);return box};const show=(message,ok=true)=>{const box=ensureStatus();box.textContent=message;box.style.background=ok?'#238653':'#b33b3b';box.style.display='block';clearTimeout(window.__crmStatusTimer);window.__crmStatusTimer=setTimeout(()=>box.style.display='none',3500)};for(const [fn,label,id] of [['addContact','Contact','cName'],['addTask','Task','tTitle']]){const original=window[fn];if(typeof original==='function')window[fn]=async function(){if(!(byId(id)?.value||'').trim()){show('Enter '+label.toLowerCase()+' details before saving.',false);byId(id)?.focus();return}try{await original();show(label+' saved to CRM.')}catch(e){show(label+' could not be saved: '+(e?.message||'unknown error'),false)}}}})();</script>`;html=html.replace('</body>',patch+'</body>');const headers=new Headers(response.headers);headers.delete('content-length');headers.set('cache-control','no-store');return new Response(html,{status:response.status,statusText:response.statusText,headers});}
-async function serveAssetFallback(request,env,response){if(response.status!==404||!['GET','HEAD'].includes(request.method)||!env.ASSETS||typeof env.ASSETS.fetch!=='function')return response;const url=new URL(request.url);if(url.pathname.startsWith('/api/')||url.pathname==='/mcp'||url.pathname==='/mcp/')return response;const assetResponse=await env.ASSETS.fetch(request);return assetResponse.status===404?response:assetResponse;}
-export default{async fetch(request,env,ctx){const url=new URL(request.url);if(url.pathname.startsWith('/api/')&&blocksCrossSiteCookieWrite(request))return secure(new Response(JSON.stringify({error:'cross_site_request_blocked'}),{status:403,headers:{'content-type':'application/json; charset=UTF-8','cache-control':'no-store'}}));if(url.pathname==='/mcp'||url.pathname==='/mcp/')return secure(await handleMCP(request,env));if(url.pathname.startsWith('/api/tutor')){const tutor=await handleTutor(request,env);if(tutor)return secure(tutor);}if(url.pathname.startsWith('/api/maker/'))return secure(await handleMaker(request,env));if(url.pathname.startsWith('/api/telnyx/')){const telnyx=await handleTelnyx(request,env);if(telnyx)return secure(telnyx);}if(url.pathname.startsWith('/api/receptionist')){const receptionist=await handleReceptionist(request,env);if(receptionist)return secure(receptionist);}if(url.pathname.startsWith('/api/crm/')){const operational=await handleOperationalCRM(request,env);if(operational)return secure(operational);return secure(await handleCRM(request,env));}if(url.pathname.startsWith('/api/social/'))return secure(await handleSocial(request,env));if(url.pathname.startsWith('/api/media/'))return secure(await handleMedia(request,env));if(url.pathname.startsWith('/api/studio/')){const studio=await handleStudioPublic(request,env);if(studio)return secure(studio);}if(url.pathname.startsWith('/api/library/transform')){const transform=await handleLibraryPublicTransform(request,env);if(transform)return secure(transform);}if(url.pathname.startsWith('/api/library/')){const library=await handleLibrary(request,env);if(library)return secure(library);}if(url.pathname.startsWith('/api/authors/'))return secure(await handleAuthors(request,env));if(url.pathname.startsWith('/api/celestial/'))return secure(await handleCelestialMedia(request,env));if(url.pathname.startsWith('/api/core/'))return secure(await handleCore(request,env));if(request.method==='GET'&&url.pathname==='/tutor')return secure(Response.redirect(new URL('/tutor.html',url),302));if(request.method==='GET'&&url.pathname==='/media-studio')return secure(Response.redirect(new URL('/media-studio.html',url),302));if(request.method==='GET'&&url.pathname==='/authors')return secure(Response.redirect(new URL('/authors/',url),302));if(request.method==='GET'&&url.pathname==='/library')return secure(Response.redirect(new URL('/library/',url),302));if(request.method==='GET'&&(url.pathname==='/portal'||url.pathname==='/portal/index.html'))return secure(Response.redirect(new URL('/portal/',url),302));let response=await app.fetch(request,env,ctx);response=await serveAssetFallback(request,env,response);if(request.method==='GET'&&(url.pathname==='/crm'||url.pathname==='/crm.html'))return secure(await enhanceCRM(response));return secure(response);}}
+const SECURITY_HEADERS={
+  'x-content-type-options':'nosniff',
+  'x-frame-options':'DENY',
+  'referrer-policy':'strict-origin-when-cross-origin',
+  'permissions-policy':'camera=(), microphone=(self), geolocation=(), payment=()',
+  'cross-origin-resource-policy':'same-origin'
+};
+
+function secure(response){
+  const headers=new Headers(response.headers);
+  for(const [name,value] of Object.entries(SECURITY_HEADERS))headers.set(name,value);
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+
+function getCookie(request,name){
+  const raw=request.headers.get('Cookie')||'';
+  const match=raw.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
+  return match?match[1]:null;
+}
+
+async function hasValidPortalSession(request,env){
+  const sessionId=getCookie(request,'zorvian_session');
+  if(!sessionId||!env.DB)return false;
+  try{
+    const row=await env.DB.prepare(`SELECT s.id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND s.expires_at>? LIMIT 1`)
+      .bind(sessionId,new Date().toISOString()).first();
+    return Boolean(row?.id);
+  }catch{
+    return false;
+  }
+}
+
+async function servePortalLogin(request,env){
+  if(!env.ASSETS||typeof env.ASSETS.fetch!=='function'){
+    return new Response('CAELOMERE sign-in is temporarily unavailable.',{status:503,headers:{'content-type':'text/plain; charset=UTF-8','cache-control':'no-store'}});
+  }
+  const url=new URL(request.url);
+  url.pathname='/portal-login.html';
+  url.search='';
+  const response=await env.ASSETS.fetch(new Request(url.toString(),{method:'GET',headers:request.headers}));
+  const headers=new Headers(response.headers);
+  headers.set('cache-control','no-store');
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+
+function blocksCrossSiteCookieWrite(request){
+  if(!['POST','PUT','PATCH','DELETE'].includes(request.method))return false;
+  if(new URL(request.url).pathname.startsWith('/api/maker/public/'))return false;
+  if(!request.headers.get('Cookie'))return false;
+  const origin=request.headers.get('Origin');
+  return Boolean(origin&&origin!==new URL(request.url).origin);
+}
+
+async function enhanceCRM(response){
+  const type=response.headers.get('content-type')||'';
+  if(!response.ok||!type.includes('text/html'))return response;
+  let html=await response.text();
+  const patch=`<script>(()=>{const byId=id=>document.getElementById(id);const ensureStatus=()=>{if(byId('crmSaveStatus'))return byId('crmSaveStatus');const box=document.createElement('div');box.id='crmSaveStatus';box.style.cssText='position:fixed;right:22px;bottom:22px;z-index:9999;display:none;max-width:420px;padding:12px 16px;border-radius:10px;background:#111820;color:white;box-shadow:0 12px 35px rgba(0,0,0,.2);font:700 12px Arial';document.body.appendChild(box);return box};const show=(message,ok=true)=>{const box=ensureStatus();box.textContent=message;box.style.background=ok?'#238653':'#b33b3b';box.style.display='block';clearTimeout(window.__crmStatusTimer);window.__crmStatusTimer=setTimeout(()=>box.style.display='none',3500)};for(const [fn,label,id] of [['addContact','Contact','cName'],['addTask','Task','tTitle']]){const original=window[fn];if(typeof original==='function')window[fn]=async function(){if(!(byId(id)?.value||'').trim()){show('Enter '+label.toLowerCase()+' details before saving.',false);byId(id)?.focus();return}try{await original();show(label+' saved to CRM.')}catch(e){show(label+' could not be saved: '+(e?.message||'unknown error'),false)}}}})();</script>`;
+  html=html.replace('</body>',patch+'</body>');
+  const headers=new Headers(response.headers);
+  headers.delete('content-length');
+  headers.set('cache-control','no-store');
+  return new Response(html,{status:response.status,statusText:response.statusText,headers});
+}
+
+async function serveAssetFallback(request,env,response){
+  if(response.status!==404||!['GET','HEAD'].includes(request.method)||!env.ASSETS||typeof env.ASSETS.fetch!=='function')return response;
+  const url=new URL(request.url);
+  if(url.pathname.startsWith('/api/')||url.pathname==='/mcp'||url.pathname==='/mcp/')return response;
+  const assetResponse=await env.ASSETS.fetch(request);
+  return assetResponse.status===404?response:assetResponse;
+}
+
+export default{
+  async fetch(request,env,ctx){
+    const url=new URL(request.url);
+
+    if(url.pathname.startsWith('/api/')&&blocksCrossSiteCookieWrite(request)){
+      return secure(new Response(JSON.stringify({error:'cross_site_request_blocked'}),{status:403,headers:{'content-type':'application/json; charset=UTF-8','cache-control':'no-store'}}));
+    }
+
+    if(request.method==='GET'&&(url.pathname==='/'||url.pathname==='/index.html')){
+      if(await hasValidPortalSession(request,env))return secure(Response.redirect(new URL('/portal/',url),302));
+      return secure(await servePortalLogin(request,env));
+    }
+
+    if(url.pathname==='/mcp'||url.pathname==='/mcp/')return secure(await handleMCP(request,env));
+    if(url.pathname.startsWith('/api/tutor')){const tutor=await handleTutor(request,env);if(tutor)return secure(tutor);}
+    if(url.pathname.startsWith('/api/maker/'))return secure(await handleMaker(request,env));
+    if(url.pathname.startsWith('/api/telnyx/')){const telnyx=await handleTelnyx(request,env);if(telnyx)return secure(telnyx);}
+    if(url.pathname.startsWith('/api/receptionist')){const receptionist=await handleReceptionist(request,env);if(receptionist)return secure(receptionist);}
+    if(url.pathname.startsWith('/api/crm/')){const operational=await handleOperationalCRM(request,env);if(operational)return secure(operational);return secure(await handleCRM(request,env));}
+    if(url.pathname.startsWith('/api/social/'))return secure(await handleSocial(request,env));
+    if(url.pathname.startsWith('/api/media/'))return secure(await handleMedia(request,env));
+    if(url.pathname.startsWith('/api/studio/')){const studio=await handleStudioPublic(request,env);if(studio)return secure(studio);}
+    if(url.pathname.startsWith('/api/library/transform')){const transform=await handleLibraryPublicTransform(request,env);if(transform)return secure(transform);}
+    if(url.pathname.startsWith('/api/library/')){const library=await handleLibrary(request,env);if(library)return secure(library);}
+    if(url.pathname.startsWith('/api/authors/'))return secure(await handleAuthors(request,env));
+    if(url.pathname.startsWith('/api/celestial/'))return secure(await handleCelestialMedia(request,env));
+    if(url.pathname.startsWith('/api/core/'))return secure(await handleCore(request,env));
+
+    if(request.method==='GET'&&url.pathname==='/tutor')return secure(Response.redirect(new URL('/tutor.html',url),302));
+    if(request.method==='GET'&&url.pathname==='/media-studio')return secure(Response.redirect(new URL('/media-studio.html',url),302));
+    if(request.method==='GET'&&url.pathname==='/authors')return secure(Response.redirect(new URL('/authors/',url),302));
+    if(request.method==='GET'&&url.pathname==='/library')return secure(Response.redirect(new URL('/library/',url),302));
+    if(request.method==='GET'&&(url.pathname==='/portal'||url.pathname==='/portal/index.html'))return secure(Response.redirect(new URL('/portal/',url),302));
+
+    let response=await app.fetch(request,env,ctx);
+    response=await serveAssetFallback(request,env,response);
+    if(request.method==='GET'&&(url.pathname==='/crm'||url.pathname==='/crm.html'))return secure(await enhanceCRM(response));
+    return secure(response);
+  }
+};
