@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Zorvian Australian Tutor</title>
+<style>
+:root{--ink:#152033;--muted:#667085;--line:#e8edf3;--red:#ff4d4d;--orange:#ff9f1c;--yellow:#ffd93d;--green:#3ac569;--blue:#3b82f6;--purple:#8b5cf6}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font-family:Inter,ui-rounded,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.rainbow{height:8px;background:linear-gradient(90deg,var(--red),var(--orange),var(--yellow),var(--green),var(--blue),var(--purple))}.wrap{max-width:1100px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px}.brand{font-size:22px;font-weight:850}.badge{padding:9px 14px;border:1px solid var(--line);border-radius:999px;background:#fff;font-weight:700}.hero{padding:44px 0 24px;text-align:center}.hero h1{font-size:clamp(34px,6vw,62px);line-height:1.02;margin:0}.hero p{max-width:760px;margin:16px auto;color:var(--muted);font-size:18px;line-height:1.6}.rainbowText{background:linear-gradient(90deg,var(--red),var(--orange),#d9ae00,var(--green),var(--blue),var(--purple));-webkit-background-clip:text;color:transparent}.panel{border:1px solid var(--line);border-radius:28px;padding:22px;box-shadow:0 18px 50px rgba(21,32,51,.07)}.selectors{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}.field label{display:block;font-weight:800;margin:0 0 7px}.field select,.ask textarea{width:100%;border:2px solid #eef1f5;border-radius:16px;padding:14px;background:#fff;font:inherit;color:var(--ink);outline:none}.field select:focus,.ask textarea:focus{border-color:var(--blue)}.ask textarea{min-height:120px;resize:vertical;font-size:18px}.buttons{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-top:14px}.btn{border:0;border-radius:16px;padding:14px 12px;color:#fff;font-weight:850;cursor:pointer;font-size:14px}.red{background:var(--red)}.orange{background:var(--orange)}.yellow{background:#e5b600;color:#332900}.green{background:var(--green)}.blue{background:var(--blue)}.purple{background:var(--purple)}.result{margin-top:18px;border-radius:20px;background:#fafbfc;border:1px solid var(--line);padding:18px;min-height:118px}.result h3{margin-top:0}.subjects{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.subject{padding:18px;border-radius:20px;border:1px solid var(--line);font-weight:850;text-align:center}.subject:nth-child(6n+1){border-top:5px solid var(--red)}.subject:nth-child(6n+2){border-top:5px solid var(--orange)}.subject:nth-child(6n+3){border-top:5px solid var(--yellow)}.subject:nth-child(6n+4){border-top:5px solid var(--green)}.subject:nth-child(6n+5){border-top:5px solid var(--blue)}.subject:nth-child(6n){border-top:5px solid var(--purple)}.parent{margin-top:26px;padding:22px;border-radius:24px;background:#f8fafc}.small{color:var(--muted);font-size:14px;line-height:1.55}@media(max-width:900px){.buttons{grid-template-columns:repeat(3,1fr)}}@media(max-width:780px){.selectors,.subjects{grid-template-columns:1fr 1fr}.buttons{grid-template-columns:1fr 1fr}.buttons .btn:last-child{grid-column:1/-1}.top{align-items:flex-start}.hero{padding-top:30px}}@media(max-width:520px){.selectors,.subjects{grid-template-columns:1fr}.wrap{padding:16px}.panel{padding:16px}.hero p{font-size:16px}}
+</style>
+</head>
+<body>
+<div class="rainbow"></div>
+<main class="wrap">
+  <div class="top"><div class="brand">Zorvian Education</div><div class="badge">Australian Tutor · Foundation to Year 12</div></div>
+  <section class="hero">
+    <h1>Learning that knows <span class="rainbowText">your curriculum.</span></h1>
+    <p>A curriculum-aware AI tutor for students across every Australian state and territory, from Foundation or Kindergarten through Year 12. It adjusts to the student’s jurisdiction, learning level, subject and senior-secondary course before it answers.</p>
+  </section>
+  <section class="panel">
+    <div class="selectors">
+      <div class="field"><label for="state">State / Territory</label><select id="state"><option>New South Wales</option><option>Victoria</option><option>Queensland</option><option>Western Australia</option><option>South Australia</option><option>Tasmania</option><option>Australian Capital Territory</option><option>Northern Territory</option></select></div>
+      <div class="field"><label for="year">School year / level</label><select id="year"><option>Foundation / Kindergarten / Prep / Transition</option><option>Year 1</option><option>Year 2</option><option>Year 3</option><option>Year 4</option><option>Year 5</option><option>Year 6</option><option>Year 7</option><option>Year 8</option><option>Year 9</option><option>Year 10</option><option>Year 11</option><option>Year 12</option></select></div>
+      <div class="field"><label for="subject">Subject / course</label><select id="subject"><option>English</option><option>Mathematics</option><option>Science</option><option>Humanities & Social Sciences</option><option>Health & PE</option><option>The Arts</option><option>Technologies</option><option>Languages</option><option>VET / Vocational</option><option>Senior Secondary Elective</option></select></div>
+    </div>
+    <div class="ask"><textarea id="question" placeholder="Ask me a school question, revision question, assignment concept or exam topic…"></textarea></div>
+    <div class="buttons">
+      <button class="btn red" onclick="preset('Explain this simply')">Explain simply</button>
+      <button class="btn orange" onclick="preset('Give me a worked example')">Worked example</button>
+      <button class="btn yellow" onclick="preset('Give me a hint but not the answer')">Give me a hint</button>
+      <button class="btn green" onclick="preset('Quiz me on this topic')">Quiz me</button>
+      <button class="btn purple" onclick="preset('Help me revise this topic')">Revision</button>
+      <button class="btn orange" onclick="preset('Give me an exam-style practice question')">Exam practice</button>
+      <button class="btn blue" onclick="askTutor()">Ask Tutor</button>
+    </div>
+    <div class="result" id="result"><h3>Your tutor is ready</h3><div class="small">The production version sends the question with state/territory, school year or learning level and subject/course to Zorvian Core, retrieves the correct approved curriculum or senior-secondary syllabus context, then answers at the student’s actual learning level.</div></div>
+  </section>
+  <section class="subjects"><div class="subject">English</div><div class="subject">Mathematics</div><div class="subject">Science</div><div class="subject">HASS</div><div class="subject">Health & PE</div><div class="subject">The Arts</div><div class="subject">Technologies</div><div class="subject">Languages</div><div class="subject">VET</div><div class="subject">Senior Secondary</div><div class="subject">Revision</div><div class="subject">Exam Practice</div></section>
+  <section class="parent"><h2>Parent & teacher view</h2><p>Parents and teachers can see the curriculum route used, learning level, subject or course, recent topics, strengths, areas needing support and suggested next practice, while the student-facing experience remains simple and welcoming.</p><p class="small">Safeguard rule: the tutor teaches and explains rather than simply completing work for the student. Curriculum and syllabus references must come from approved sources and must never be invented.</p></section>
+</main>
+<script>
+function preset(text){document.getElementById('question').value=text+': '+document.getElementById('question').value;document.getElementById('question').focus()}
+function askTutor(){const state=document.getElementById('state').value,year=document.getElementById('year').value,subject=document.getElementById('subject').value,q=document.getElementById('question').value.trim();const r=document.getElementById('result');if(!q){r.innerHTML='<h3>Type a question first</h3><div class="small">Then I can route it to the correct curriculum or senior-secondary syllabus.</div>';return}r.innerHTML=`<h3>${subject} · ${year}</h3><p><strong>Curriculum route:</strong> ${state}</p><p>${escapeHtml(q)}</p><div class="small">UI prototype connected to the planned Zorvian curriculum retrieval layer. Live AI response is enabled when the Core education endpoint is wired.</div>`}
+function escapeHtml(s){return s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+</script>
+</body>
+</html>
