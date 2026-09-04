@@ -115,3 +115,17 @@ test('Portal Experience v1 visual baseline remains present', async () => {
   assert.match(css, /\.fascia/);
   assert.match(css, /\.celeste__portrait/);
 });
+
+test('verified audio path speaks the actual Social advisory reply and preserves text fallback', async () => {
+  const html = await read('../public/portal/index.html');
+  const audio = await read('../public/portal/js/audio-reply.js');
+  assert.match(html, /js\/audio-reply\.js/);
+  assert.match(audio, /\/api\/ai\/social/);
+  assert.match(audio, /response\.clone\(\)\.json\(\)/);
+  assert.match(audio, /data\?\.reply/);
+  assert.match(audio, /SpeechSynthesisUtterance/);
+  assert.match(audio, /speechSynthesis\.speak/);
+  assert.match(audio, /speechSynthesis\.cancel/);
+  assert.match(audio, /Audio reply could not play\. The full reply is still shown on screen\./);
+  assert.doesNotMatch(audio, /execute_once|\/live|\/api\/social\/generate|\/schedule|\/approval/);
+});
