@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CAELOMERE — Client Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <script>
+    (function () {
+      var map = {
+        celeste: { name: "Celeste", src: "assets/hosts/celeste.jpg" },
+        cassian: { name: "Cassian", src: "assets/hosts/cassian.jpg" },
+        lin: { name: "Lin", src: "assets/hosts/lin.jpg" }
+      };
+      var id = new URLSearchParams(location.search).get("host");
+      id = id ? String(id).toLowerCase() : "";
+      window.__caelomereHostHint = map[id] || null;
+    })();
+  </script>
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true">
+    <div class="atmosphere__vignette"></div>
+    <div class="atmosphere__gold-wash"></div>
+    <div class="atmosphere__grain"></div>
+  </div>
+
+  <header class="masthead">
+    <div class="mark" aria-label="CAELOMERE">
+      <svg class="mark__emblem" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="goldG" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#f4e3b2"/>
+            <stop offset="45%" stop-color="#c9a227"/>
+            <stop offset="100%" stop-color="#8a6b1a"/>
+          </linearGradient>
+        </defs>
+        <path fill="url(#goldG)" d="M32 4 L34.2 22.2 L52 16 L36.8 28.4 L56 32 L36.8 35.6 L52 48 L34.2 41.8 L32 60 L29.8 41.8 L12 48 L27.2 35.6 L8 32 L27.2 28.4 L12 16 L29.8 22.2 Z"/>
+        <circle cx="32" cy="32" r="6.2" fill="#0a0907" stroke="url(#goldG)" stroke-width="1.4"/>
+        <circle cx="32" cy="32" r="2.1" fill="url(#goldG)"/>
+      </svg>
+      <span class="mark__word">CAELOMERE</span>
+    </div>
+    <button class="masthead__aside" id="presentationToggle" type="button" title="Presentation (review only)">
+      Private environment
+    </button>
+  </header>
+
+  <main class="stage" id="stage">
+    <section class="fascia" id="fascia" aria-label="CAELOMERE environment">
+      <div class="fascia__frame">
+        <span class="fascia__corner fascia__corner--tl"></span>
+        <span class="fascia__corner fascia__corner--tr"></span>
+        <span class="fascia__corner fascia__corner--bl"></span>
+        <span class="fascia__corner fascia__corner--br"></span>
+      </div>
+
+      <div class="presence" id="presence">
+        <div class="celeste" id="celeste" aria-label="Host">
+          <div class="celeste__glow"></div>
+          <div class="celeste__portrait">
+            <img id="hostPortrait" class="celeste__photo" src="assets/hosts/celeste.jpg" alt="" />
+          </div>
+          <p class="celeste__name" id="hostName"></p>
+        </div>
+
+        <div class="welcome" id="welcome">
+          <p class="welcome__line" id="spokenLine"></p>
+        </div>
+        <script>
+          (function () {
+            var h = window.__caelomereHostHint || { name: "Celeste", src: "assets/hosts/celeste.jpg" };
+            var img = document.getElementById("hostPortrait");
+            var name = document.getElementById("hostName");
+            var line = document.getElementById("spokenLine");
+            var hour = new Date().getHours();
+            var part = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+            img.src = h.src;
+            img.alt = h.name;
+            name.textContent = h.name;
+            line.innerHTML = "Good " + part + ". I’m " + h.name + ".<br>What would you like us to work on today?";
+            document.getElementById("celeste").setAttribute("aria-label", h.name);
+          })();
+        </script>
+      </div>
+
+      <aside class="workspace" id="workspace" hidden>
+        <header class="workspace__head">
+          <p class="workspace__kicker" id="workspaceKicker"></p>
+          <h2 class="workspace__title" id="workspaceTitle"></h2>
+          <p class="workspace__lede" id="workspaceLede"></p>
+        </header>
+        <div class="workspace__body" id="workspaceBody"></div>
+      </aside>
+    </section>
+  </main>
+
+  <footer class="composer-wrap">
+    <div class="composer" id="composer">
+      <button class="voice" id="voiceBtn" type="button" aria-pressed="false" title="Speak with the host">
+        <span class="voice__ring"></span>
+        <svg viewBox="0 0 24 24" class="voice__icon" aria-hidden="true">
+          <path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
+        </svg>
+        <span class="sr-only">Voice</span>
+      </button>
+      <form id="requestForm" class="composer__form" autocomplete="off">
+        <label class="sr-only" for="requestInput">Speak or type a request</label>
+        <input id="requestInput" name="request" type="text" placeholder="Speak with the host, or type a request…" />
+        <button class="send" type="submit">Send</button>
+      </form>
+    </div>
+    <p class="composer__hint" id="voiceStatus">Voice is available. Press the gold disc to speak.</p>
+  </footer>
+
+  <div class="presentation" id="presentationPanel" hidden>
+    <p class="presentation__kicker">Host presentation</p>
+    <p class="presentation__note">The same CAELOMERE intelligence. Appearance and voice only.</p>
+    <div class="presentation__list" id="hostList"></div>
+  </div>
+
+  <script src="js/hosts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

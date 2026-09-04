@@ -1,0 +1,47 @@
+{
+  "layer": "presentation",
+  "intelligence": "CAELOMERE",
+  "note": "Visual and voice presentation only. Does not change Core, Gateway, permissions or execution.",
+  "defaultHostId": "celeste",
+  "hosts": [
+    {
+      "id": "celeste",
+      "displayName": "Celeste",
+      "spokenName": "Celeste",
+      "pronouns": "she",
+      "presentation": "female",
+      "locale": "en-GB",
+      "voiceHints": ["female", "samantha", "victoria", "serena", "google uk english female"],
+      "voicePitch": 1.02,
+      "voiceRate": 0.96,
+      "portrait": "assets/hosts/celeste.jpg",
+      "attire": "dark tailored collar, gold pendant"
+    },
+    {
+      "id": "cassian",
+      "displayName": "Cassian",
+      "spokenName": "Cassian",
+      "pronouns": "he",
+      "presentation": "male",
+      "locale": "en-GB",
+      "voiceHints": ["male", "daniel", "google uk english male", "alex", "david"],
+      "voicePitch": 0.92,
+      "voiceRate": 0.95,
+      "portrait": "assets/hosts/cassian.jpg",
+      "attire": "dark jacket, open collar"
+    },
+    {
+      "id": "lin",
+      "displayName": "Lin",
+      "spokenName": "Lin",
+      "pronouns": "she",
+      "presentation": "female",
+      "locale": "en-GB",
+      "voiceHints": ["female", "karen", "moira", "google uk english female", "samantha"],
+      "voicePitch": 1.0,
+      "voiceRate": 0.95,
+      "portrait": "assets/hosts/lin.jpg",
+      "attire": "dark jacket, ivory silk"
+    }
+  ]
+}
