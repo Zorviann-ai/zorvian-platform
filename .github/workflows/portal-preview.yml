@@ -42,7 +42,7 @@ jobs:
 
       - name: Run portal and backend checks
         run: |
-          node --test tests/portal-experience-v1-phase1b.test.mjs tests/social-accountability.test.mjs tests/security-hardening.test.mjs tests/ai-router.test.mjs
+          node --test tests/portal-experience-v1-phase1b.test.mjs tests/portal-front-door.test.mjs tests/social-accountability.test.mjs tests/security-hardening.test.mjs tests/ai-router.test.mjs
 
       - name: Validate preview bundle
         run: npx wrangler deploy --dry-run --name caelomere-portal-preview-pr62
@@ -57,12 +57,18 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
           test -n "$url" || { echo "::error::Preview Worker URL was not detected"; exit 1; }
 
-      - name: Smoke-test preview
+      - name: Smoke-test Celeste-first preview
         env:
           WORKER_URL: ${{ steps.deploy.outputs.url }}
         shell: bash
         run: |
           curl --fail --silent --show-error --retry 5 --retry-delay 5 "$WORKER_URL/portal/" >/dev/null
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "$WORKER_URL/" -o /tmp/root.html
+          grep -q 'Sign in to continue directly to Celeste' /tmp/root.html || { echo "::error::Preview root did not serve the Celeste-first sign-in"; exit 1; }
+          if grep -q 'Caelomere AI — Business Control' /tmp/root.html; then
+            echo "::error::Legacy Business Control dashboard is still exposed at preview root"
+            exit 1
+          fi
           status=$(curl --silent --output /tmp/me.json --write-out '%{http_code}' "$WORKER_URL/api/me")
           test "$status" = "200" || { echo "::error::Expected /api/me to return 200, received $status"; cat /tmp/me.json; exit 1; }
 
@@ -70,6 +76,8 @@ jobs:
         run: |
           echo "## CAELOMERE Portal Preview" >> "$GITHUB_STEP_SUMMARY"
           echo "- Tests: passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Celeste-first root: verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Legacy dashboard at root: removed from preview journey" >> "$GITHUB_STEP_SUMMARY"
           echo "- Production Worker: untouched" >> "$GITHUB_STEP_SUMMARY"
           echo "- Preview Worker: caelomere-portal-preview-pr62" >> "$GITHUB_STEP_SUMMARY"
-          echo "- URL: ${{ steps.deploy.outputs.url }}/portal/" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: ${{ steps.deploy.outputs.url }}/" >> "$GITHUB_STEP_SUMMARY"
