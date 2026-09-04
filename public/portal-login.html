@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CAELOMERE — Sign in</title>
+<style>
+:root{--bg:#090907;--gold:#d2ad52;--text:#f6f0e3;--muted:#a79f90;--panel:#12110e;--line:#2a261d}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,Arial,sans-serif;background:radial-gradient(circle at 50% 25%,rgba(210,173,82,.10),transparent 30%),#090907;color:var(--text)}
+main{min-height:100vh;display:grid;place-items:center;padding:28px}.card{width:min(430px,100%);background:rgba(18,17,14,.96);border:1px solid var(--line);border-radius:18px;padding:34px;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.brand{font-family:Georgia,serif;letter-spacing:.16em;color:var(--gold);font-size:20px;margin-bottom:26px}.kicker{font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin-bottom:8px}h1{font-family:Georgia,serif;font-size:34px;font-weight:500;margin:0 0 10px}p{color:var(--muted);line-height:1.5;margin:0 0 24px}.field{margin:14px 0}.field label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}.field input{width:100%;border:1px solid var(--line);background:#0d0c0a;color:var(--text);border-radius:10px;padding:14px}.field input:focus{outline:1px solid var(--gold);border-color:var(--gold)}button{width:100%;border:0;border-radius:10px;padding:14px;background:var(--gold);color:#0d0c0a;font-weight:800;margin-top:8px;cursor:pointer}button:disabled{opacity:.55;cursor:default}.status{min-height:20px;margin-top:12px;color:#d8c79b;font-size:12px}.note{margin-top:22px;font-size:11px;color:#7f786b;text-align:center}
+</style>
+</head>
+<body>
+<main>
+  <section class="card" aria-labelledby="title">
+    <div class="brand">CAELOMERE</div>
+    <div class="kicker">Private environment</div>
+    <h1 id="title">Enter Caelomere</h1>
+    <p>Sign in to continue directly to Celeste.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button id="loginButton" type="submit">Sign in</button>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </form>
+    <div class="note">The old Business Control dashboard is not part of this preview entry path.</div>
+  </section>
+</main>
+<script>
+const form=document.getElementById('loginForm');
+const button=document.getElementById('loginButton');
+const status=document.getElementById('status');
+form.addEventListener('submit',async event=>{
+  event.preventDefault();
+  button.disabled=true;status.textContent='Checking your account…';
+  try{
+    const response=await fetch('/api/auth/login',{method:'POST',credentials:'include',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({email:document.getElementById('email').value.trim(),password:document.getElementById('password').value})});
+    let data={};try{data=await response.json()}catch{}
+    if(!response.ok)throw new Error(data.error||'Sign-in failed.');
+    const me=await fetch('/api/me',{credentials:'include',headers:{accept:'application/json'}});
+    const session=await me.json();
+    if(!me.ok||session?.authenticated!==true)throw new Error('Authentication could not be confirmed.');
+    window.location.replace('/portal/');
+  }catch(error){status.textContent=error.message||'Sign-in failed.';}
+  finally{button.disabled=false;}
+});
+</script>
+</body>
+</html>
