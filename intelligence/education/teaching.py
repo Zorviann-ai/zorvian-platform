@@ -119,6 +119,7 @@ class LessonOutput:
     summary: LessonSummary
     teacher_id: str = CELESTE_TEACHER_ID
     subject: str = ""
+    evidence_basis: str = "GENERAL_EXPLANATION"
 
 
 @dataclass
@@ -144,19 +145,41 @@ class CelesteTeacher:
             subject=subject,
         )
 
-    def teach(self, context, objective: LearningObjective, node: CurriculumNode, source: EducationSource, adaptation: LearnerRequest | None = None) -> LessonOutput:
+    def teach(self, context, objective: LearningObjective, node: CurriculumNode, source: EducationSource, adaptation: LearnerRequest | None = None, knowledge=None) -> LessonOutput:
         simple = f"{objective.text} explained for {context.age_or_level}."
         if adaptation is LearnerRequest.SIMPLER:
             simple = f"Easier version: {objective.text}."
         alternative = "Another route through the same idea." if adaptation is LearnerRequest.ANOTHER_WAY else ""
         lang_note = f" Respond in {context.language.spoken.value} ({context.language.script.value})." if adaptation is LearnerRequest.TRANSLATE else ""
         practice_prompt = "Short check: apply the method without notes." if adaptation is LearnerRequest.TEST_ME else "Try this question."
+        evidence_basis = "GENERAL_EXPLANATION"
+        extra_prov: tuple[str, ...] = ()
+        if knowledge is not None:
+            evidence_basis = getattr(knowledge.evidence_basis, "value", str(knowledge.evidence_basis))
+            extra_prov = (knowledge.provenance_summary,)
+            reason = getattr(knowledge, "retrieval_reason", None)
+            if evidence_basis == "SOURCE_BACKED":
+                simple = f"Based on the approved curriculum source: {simple}"
+            elif reason == "METADATA_ONLY_REFERENCE":
+                simple = (
+                    "An approved curriculum reference is available, but its body text is not "
+                    f"ingested in the governed vault. General explanation: {simple}"
+                )
+            elif reason == "STALE_SOURCE":
+                simple = (
+                    "The available curriculum source requires revalidation and cannot currently "
+                    f"be treated as verified. General explanation: {simple}"
+                )
+            elif evidence_basis == "PROFESSIONAL_REVIEW_REQUIRED":
+                simple = f"Professional review required. General explanation: {simple}"
+            elif evidence_basis == "NO_RELEVANT_SOURCE_MATCH":
+                simple = f"General explanation only (no approved source match): {simple}"
         return LessonOutput(
             answer=simple + lang_note,
             explanation=Explanation(simple, "Named method for this objective", "Student-facing steps, not hidden chain-of-thought.", "Close the idea and check it.", (objective.text, node.assessment_objective), alternative),
             worked_example=WorkedExample("Example prompt", "Step 1 → Step 2", "result"),
             key_points=(objective.text, node.topic),
-            provenance=(source.source_id, source.retrieval_reference, node.specification_version),
+            provenance=(source.source_id, source.retrieval_reference, node.specification_version) + extra_prov,
             comprehension_check="Can you say the method in your own words?",
             practice=PracticeQuestion("q1", practice_prompt),
             hints=(Hint("Look at the first given."),),
@@ -164,4 +187,5 @@ class CelesteTeacher:
             summary=LessonSummary("Covered the objective.", "Recommended next topic from mastery model."),
             teacher_id=self.profile.teacher_id,
             subject=context.subject.subject,
+            evidence_basis=evidence_basis,
         )
