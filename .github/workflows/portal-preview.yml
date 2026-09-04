@@ -1,0 +1,75 @@
+name: CAELOMERE Portal Preview
+
+on:
+  push:
+    branches:
+      - preview/portal-experience-v1-phase1b
+  workflow_dispatch:
+
+concurrency:
+  group: caelomere-portal-preview-pr62
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Test and deploy isolated portal preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out preview branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Require Cloudflare credentials
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+
+      - name: Run portal and backend checks
+        run: |
+          node --test tests/portal-experience-v1-phase1b.test.mjs tests/social-accountability.test.mjs tests/security-hardening.test.mjs tests/ai-router.test.mjs
+
+      - name: Validate preview bundle
+        run: npx wrangler deploy --dry-run --name caelomere-portal-preview-pr62
+
+      - name: Deploy isolated preview Worker
+        id: deploy
+        shell: bash
+        run: |
+          set -o pipefail
+          npx wrangler deploy --name caelomere-portal-preview-pr62 2>&1 | tee deploy-output.txt
+          url=$(grep -Eo 'https://[^ ]+\.workers\.dev' deploy-output.txt | tail -1 || true)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          test -n "$url" || { echo "::error::Preview Worker URL was not detected"; exit 1; }
+
+      - name: Smoke-test preview
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.url }}
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "$WORKER_URL/portal/" >/dev/null
+          status=$(curl --silent --output /tmp/me.json --write-out '%{http_code}' "$WORKER_URL/api/me")
+          test "$status" = "200" || { echo "::error::Expected /api/me to return 200, received $status"; cat /tmp/me.json; exit 1; }
+
+      - name: Preview summary
+        run: |
+          echo "## CAELOMERE Portal Preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tests: passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Production Worker: untouched" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Preview Worker: caelomere-portal-preview-pr62" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: ${{ steps.deploy.outputs.url }}/portal/" >> "$GITHUB_STEP_SUMMARY"
