@@ -129,3 +129,33 @@ test('verified audio path speaks the actual Social advisory reply and preserves 
   assert.match(audio, /Audio reply could not play\. The full reply is still shown on screen\./);
   assert.doesNotMatch(audio, /execute_once|\/live|\/api\/social\/generate|\/schedule|\/approval/);
 });
+
+test('Celeste has an animated avatar runtime rather than a static-only presentation', async () => {
+  const html = await read('../public/portal/index.html');
+  const runtime = await read('../public/portal/js/avatar-runtime.js');
+  const css = await read('../public/portal/css/avatar-runtime.css');
+  assert.match(html, /css\/avatar-runtime\.css/);
+  assert.match(html, /js\/avatar-runtime\.js/);
+  assert.match(runtime, /data-avatar-mode', 'animated'/);
+  assert.match(runtime, /avatar-mouth-layer/);
+  assert.match(runtime, /caelomere:avatar-speaking/);
+  assert.match(runtime, /MutationObserver/);
+  assert.match(css, /caelomere-avatar-idle/);
+  assert.match(css, /caelomere-avatar-speaking/);
+  assert.match(css, /caelomere-mouth-window/);
+  assert.match(css, /prefers-reduced-motion:reduce/);
+});
+
+test('Celeste voice is explicit female British and never silently falls back to a male or arbitrary system voice', async () => {
+  const runtime = await read('../public/portal/js/avatar-runtime.js');
+  assert.match(runtime, /const FEMALE_EN_GB/);
+  assert.match(runtime, /serena/);
+  assert.match(runtime, /sonia/);
+  assert.match(runtime, /hazel/);
+  assert.match(runtime, /google uk english female/);
+  assert.match(runtime, /lang === 'en-gb'/);
+  assert.match(runtime, /if \(!approvedVoice\)/);
+  assert.match(runtime, /voice is unavailable on this device\. The full reply remains on screen/);
+  assert.doesNotMatch(runtime, /voices\[0\]/);
+  assert.doesNotMatch(runtime, /HEYGEN|ELEVENLABS|execute_once|\/live|\/api\/social\/generate|\/schedule|\/approval/);
+});
